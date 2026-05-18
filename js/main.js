@@ -3,6 +3,10 @@
 // ------------------------- WIRE UP ------------------------------
 
 function init(){
+  document.title = "Post 2045";
+  const title = document.querySelector("header h1");
+  if (title) title.textContent = "POST 2045";
+
   if (!load()){
     startNewRun();
   } else {
