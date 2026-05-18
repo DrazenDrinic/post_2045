@@ -1,4 +1,4 @@
-# Ashes of Tomorrow
+# Post 2045
 
 A single-file, browser-based post-apocalyptic survival + town-builder + tile-map exploration game.
 
@@ -12,7 +12,7 @@ There is no build step, no package manager, no server, no external assets, and n
 ## How to run
 
 - Open `index.html` directly in Chrome / Firefox / Edge.
-- The save lives in `localStorage` under the key `ashes_of_tomorrow_save_v1`.
+- The save lives in `localStorage` under the key `post_2045_save_v1`.
 - The header has Save / Load / Reset / Help buttons. The game also autosaves after every action.
 
 ## How to syntax-check (no tests)
@@ -100,7 +100,7 @@ The script is organized top-to-bottom into the following sections — keep new c
 ## Save format / compatibility
 
 - The save is `JSON.stringify(G)` under `SAVE_KEY`.
-- `load()` backfills missing fields so older saves still load (it regenerates the map if missing, etc.). If you change `G`'s shape in a non-backfillable way, bump `SAVE_KEY` (currently `ashes_of_tomorrow_save_v1`) so old saves are ignored instead of crashing.
+- `load()` backfills missing fields so older saves still load (it regenerates the map if missing, etc.). If you change `G`'s shape in a non-backfillable way, bump `SAVE_KEY` (currently `post_2045_save_v1`) so old saves are ignored instead of crashing.
 
 ## UI notes
 

@@ -13,13 +13,26 @@ function save(){
 
 function load(){
   try{
-    const raw = localStorage.getItem(SAVE_KEY);
+    let raw = localStorage.getItem(SAVE_KEY);
+    let migrated = false;
+    if (!raw){
+      for (const key of LEGACY_SAVE_KEYS){
+        raw = localStorage.getItem(key);
+        if (raw){ migrated = true; break; }
+      }
+    }
     if (!raw) return false;
     const parsed = JSON.parse(raw);
     G = parsed;
     normalizeGame(G);
+    if (migrated) save();
     return true;
   }catch(e){ console.warn("Load failed", e); return false; }
+}
+
+function clearSaves(){
+  localStorage.removeItem(SAVE_KEY);
+  for (const key of LEGACY_SAVE_KEYS) localStorage.removeItem(key);
 }
 
 function normalizeGame(g){
@@ -152,7 +165,7 @@ function reset(){
     body:"<p>This will erase your save and start over.</p>",
     buttons:[
       {label:"Cancel", action:closeModal},
-      {label:"Reset", primary:true, action:()=>{ localStorage.removeItem(SAVE_KEY); closeModal(); startNewRun(); }}
+      {label:"Reset", primary:true, action:()=>{ clearSaves(); closeModal(); startNewRun(); }}
     ]
   });
 }

@@ -1,4 +1,4 @@
-# Agent guide — Ashes of Tomorrow
+# Agent guide — Post 2045
 
 Project notes for AI coding agents (Claude Code, Codex, Cursor, Aider, etc.) working in this repository.
 
@@ -8,7 +8,7 @@ A single-file, browser-based post-apocalyptic survival + town-builder + tile-map
 
 - One file: `index.html` (HTML + CSS + JS embedded).
 - No build, no package manager, no server, no dependencies, no external assets.
-- Saves to `localStorage` under the key `ashes_of_tomorrow_save_v1`.
+- Saves to `localStorage` under the key `post_2045_save_v1`.
 - Designed to be opened directly in a browser.
 
 ## Hard constraints — do not violate

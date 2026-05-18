@@ -369,7 +369,7 @@ function removeDead(g){
         showModal({
           title:"You Have Perished",
           body:`<p>Your watch has ended on day ${g.day}.</p><p>Others may carry on, but without you the settlement falters.</p>`,
-          buttons:[{label:"New Run", primary:true, action:()=>{ localStorage.removeItem(SAVE_KEY); closeModal(); startNewRun(); }}]
+          buttons:[{label:"New Run", primary:true, action:()=>{ clearSaves(); closeModal(); startNewRun(); }}]
         });
         return;
       }
