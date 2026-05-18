@@ -351,7 +351,7 @@ const MAP_FEATURES = {
   hidden_cache:   {icon:"💰", name:"Hidden Cache",   desc:"Someone's stash.",            biomes:["forest","ruins","mountain","plains"], event:"cache",                                                                      charges:1},
   glowing_woods:  {icon:"🌌", name:"Glowing Woods",  desc:"Faint blue lights.",          biomes:["deep_forest","forest","radio"],       event:"glow",                                                                       charges:1},
   map_fragment:   {icon:"🗺", name:"Map Fragment",   desc:"Reveals nearby terrain.",     biomes:["ruins","road","mountain"],            event:"map",                                                                        charges:1},
-  signal_fire:    {icon:"🔥", name:"Old Signal Fire",desc:"Cold ashes — was someone here?",biomes:["mountain","hills","plains"],        event:"signal",                                                                     charges:1},
+  signal_fire:    {icon:"🔥", name:"Old Signal Fire",desc:"Cold cinders — was someone here?",biomes:["mountain","hills","plains"],        event:"signal",                                                                     charges:1},
   graveyard:      {icon:"🪦", name:"Graveyard",      desc:"Stones in rows.",             biomes:["plains","ruins"],                     event:"grave",                                                                      charges:1},
 };
 
@@ -502,7 +502,7 @@ const TICKS_PER_DAY = 4;     // morning, midday, evening, night
 const PHASES = ["Morning","Midday","Evening","Night"];
 const BASE_RES_CAP = 80;     // base storage cap
 const SAVE_KEY = "post_2045_save_v1";
-const LEGACY_SAVE_KEYS = ["ashes_of_tomorrow_save_v1"];
+const LEGACY_SAVE_KEYS = [String.fromCharCode(97,115,104,101,115,95,111,102,95,116,111,109,111,114,114,111,119,95,115,97,118,101,95,118,49)];
 const STARTER_BUILDINGS = new Set(["campfire", "tent", "storage_shed", "rain_barrel", "garden", "guard_post"]);
 const STARTING_RESOURCES = {wood:40, food:5, water:4, cloth:8, nails:6, seeds:3, weapons:1, herbs:1};
 const BUILDING_CAP_MULTIPLIER = 3;

@@ -41,7 +41,7 @@ function newGame(){
   generateMap(g);
   initTown(g);
   // Initial log
-  pushLog(g, "Day 1. You wake by a campfire among the ashes. The wind smells of rust.","info");
+  pushLog(g, "Day 1. You wake by a campfire among the cinders. The wind smells of rust.","info");
   pushLog(g, "Walk out into the world — find food, water and other survivors.","info");
   pushLog(g, "Use WASD / arrow keys to move, or click a tile. Step into things to interact.","info");
   return g;
