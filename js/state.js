@@ -7,8 +7,10 @@ let G = null; // game state
 function newGame(){
   const g = {
     day:1, phase:0,
+    phaseMinutes:0,
     log:[],
     knowledge:0, reputation:0, danger:0,
+    playerSex:"M",
     autoNotice:true,
     knownNodes:{}, // unlocked knowledge nodes
     resources: Object.fromEntries(RES_KEYS.map(k=>[k,0])),
@@ -18,6 +20,7 @@ function newGame(){
     workerAssign: {}, // buildingId -> [survivorIds]
     nextSurvId: 1,
     relationships: [], // {a,b,type:'partner'|'child'|'parent'}
+    courtship: {}, // survivorId -> progress toward marriage with player
     eventCooldowns: {},
     seed: Math.floor(Math.random()*1e9),
     // map state
@@ -34,6 +37,7 @@ function newGame(){
   player.firstName = "You";
   player.lastName = "";
   player.name = "You";
+  player.sex = "M";
   g.survivors.push(player);
   applyStartingResources(g);
   g.knownNodes = {}; // start with nothing unlocked
@@ -66,7 +70,8 @@ function startNewRun(){
 }
 
 function setPlayerName(name){
-  const clean = String(name || "").replace(/[<>]/g, "").trim().slice(0, 32) || "You";
+  const fallback = G.playerSex === "F" ? "Jane Doe" : "John Doe";
+  const clean = String(name || "").replace(/[<>]/g, "").trim().slice(0, 32) || fallback;
   G.playerName = clean;
   const p = G.survivors[0];
   if (p){
@@ -76,13 +81,26 @@ function setPlayerName(name){
   }
 }
 
+function setPlayerGender(sex){
+  const clean = sex === "F" ? "F" : "M";
+  G.playerSex = clean;
+  const p = G.survivors[0];
+  if (p) p.sex = clean;
+}
+
 function askPlayerName(){
   showModal({
     title:"Name Your Survivor",
     body:`<p>The settlement needs someone to follow through the ash.</p>
-      <input id="player-name-input" class="name-input" maxlength="32" placeholder="Enter your name" value="${G.playerName || ""}" />`,
+      <input id="player-name-input" class="name-input" maxlength="32" placeholder="John Doe" value="${G.playerName && G.playerName !== "You" ? G.playerName : ""}" />
+      <select id="player-sex-input" class="name-input">
+        <option value="M" ${G.playerSex!=="F"?"selected":""}>♂ Male (John Doe)</option>
+        <option value="F" ${G.playerSex==="F"?"selected":""}>♀ Female (Jane Doe)</option>
+      </select>`,
     buttons:[{label:"Start", primary:true, action:()=>{
       const input = document.getElementById("player-name-input");
+      const sexInput = document.getElementById("player-sex-input");
+      setPlayerGender(sexInput ? sexInput.value : "M");
       setPlayerName(input ? input.value : "");
       pushLog(G, `${G.playerName} takes command of the camp.`, "info");
       closeModal();

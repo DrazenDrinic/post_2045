@@ -14,10 +14,19 @@ function bar(label, val, max, color){
   return `<div class="bar"><div class="fill" style="width:${pct}%;background:${color}"></div><div class="lbl">${label}</div><div class="val">${Math.round(val)}/${max}</div></div>`;
 }
 
+function gameClockLabel(g){
+  const phaseMinutes = 6 * 60;
+  const minutes = (6 * 60) + (g.phase * phaseMinutes) + Math.floor(g.phaseMinutes || 0);
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return String(hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0");
+}
+
 function renderHeader(){
   const g = G;
   document.getElementById("hud-day").textContent = g.day;
   document.getElementById("hud-phase").textContent = PHASES[g.phase];
+  document.getElementById("hud-clock").textContent = gameClockLabel(g);
   document.getElementById("hud-pop").textContent = g.survivors.length;
   document.getElementById("hud-danger").textContent = settlementDanger(g);
   document.getElementById("hud-rep").textContent = Math.round(g.reputation*10)/10;
@@ -58,20 +67,25 @@ function renderLeft(){
   const actions = [
     ["eat","🍞 Eat","Restore hunger"],
     ["drink","💧 Drink","Restore thirst"],
-    ["rest","💤 Rest","Restore energy (1 phase)"],
+    ["rest","💤 Rest","2h → +25% energy"],
     ["chop_wood","🪓 Chop Wood","+wood (1 phase)"],
     ["gather","🌿 Forage","+food, herbs, seeds (1 phase)"],
-    ["fetch_water","🪣 Fetch Water","+dirty water (1 phase)"],
+    ["fetch_water","🪣 Fetch Water","1h → +1 water"],
     ["boil_water","🔥 Boil Water","2 dirty + 1 wood → 2 water"],
+    ["purify_water","⬛ Purify Water","2 dirty + 1 charcoal → 2 water"],
     ["cook","🍳 Cook","meat or crops + wood → food"],
+    ["warm_fire","🔥 Warm Up","wood/charcoal → warmth"],
+    ["gather_spirits","🕯 Gather Spirits","boost happiness and morale"],
+    ["craft_arrows","🏹 Craft Arrows","wood + bones → arrows"],
+    ["hunt","🏹 Hunt","shoot visible animals"],
     ["study","📚 Study","1 book → knowledge"],
     ["train","🥋 Train","training yard → combat"],
   ];
   for (const [k,label,sub] of actions){
     const b = el("button","",`${label}<span class="sub">${sub}</span>`);
     b.onclick = ()=> playerAction(k);
-    if (k==="study" && g.resources.books < 1) b.disabled = true;
-    if (k==="train" && !g.buildings.training_yard) b.disabled = true;
+    const blocker = quickActionBlocker(g, k);
+    if (blocker){ b.disabled = true; b.title = blocker; }
     grid.appendChild(b);
   }
   qa.appendChild(grid);
@@ -105,7 +119,8 @@ function renderRight(){
   const list = el("div","reslist");
   const cap = totalStorageCap(g);
   const fcap = foodStorageCap(g);
-  for (const k of RES_KEYS){
+  const resourceKeys = RES_KEYS.slice().sort((a,b)=>RESOURCES[a].name.localeCompare(RESOURCES[b].name));
+  for (const k of resourceKeys){
     const v = g.resources[k];
     if (v <= 0 && k!=="wood" && k!=="food" && k!=="water" && k!=="knowledge") continue; // hide empties
     const realCap = (k==="food"||k==="crops"||k==="meat") ? fcap : cap;
@@ -119,7 +134,7 @@ function renderRight(){
   dc.innerHTML = `<h3>📈 Daily Outlook</h3>`;
   const delta = estimateDailyDelta(g);
   const rows = ["food","water","dirty_water","wood","crops","meat","metal","cloth","tools","knowledge"];
-  const dl = el("div","reslist");
+  const dl = el("div","reslist outlook-list");
   for (const k of rows){
     const v = delta[k] || 0;
     if (Math.abs(v) < 0.05) continue;
@@ -192,6 +207,14 @@ let _activeTab = "town";
 let _buildToPlace = null;
 let _rtSpeed = 0;
 let _rtTimer = null;
+
+function mapPhaseLabel(phase){
+  return ["☀ Morning", "☀ Midday", "🌇 Evening", "🌙 Midnight"][phase] || PHASES[phase] || "Unknown";
+}
+
+function mapTimeLabel(g){
+  return `${mapPhaseLabel(g.phase)} · ${gameClockLabel(g)}`;
+}
 
 function renderTabs(){
   const root = document.getElementById("tabs");
@@ -339,10 +362,21 @@ function renderMapTab(root){
         if (!isExplored) return;
         startAutoWalk(x,y);
       };
+      cell.oncontextmenu = (ev)=>{
+        ev.preventDefault();
+        if (_buildToPlace || !isExplored || !isVisible) return;
+        if (Math.max(Math.abs(x-g.playerX), Math.abs(y-g.playerY)) <= 2) openTileActionDialog(g, x, y);
+        else pushLog(G, "Move within 2 tiles to inspect that place.", "info");
+        render();
+      };
       grid.appendChild(cell);
     }
   }
-  wrap.appendChild(grid);
+  const mapStage = el("div", "map-stage");
+  const phaseBadge = el("div", "map-phase-badge", mapTimeLabel(g));
+  mapStage.appendChild(grid);
+  mapStage.appendChild(phaseBadge);
+  wrap.appendChild(mapStage);
 
   // Bottom info: current tile / nearby
   const info = el("div","card");
@@ -373,8 +407,8 @@ function renderMapTab(root){
   wrap.appendChild(info);
 
   // Biome legend
-  const legend = el("div","biome-key");
-  legend.innerHTML = Object.values(BIOMES).map(b=>`<span><i style="background:${b.bg}"></i>${b.name}</span>`).join("");
+  const legend = el("details","biome-key");
+  legend.innerHTML = `<summary>Biomes</summary><div>${Object.values(BIOMES).map(b=>`<span><i style="background:${b.bg}"></i>${b.name}</span>`).join("")}</div>`;
   wrap.appendChild(legend);
 
   root.appendChild(wrap);
@@ -559,7 +593,7 @@ function renderBuildTab(root){
         <div class="head"><span class="name">${b.icon} ${b.name}</span> <span class="meta">${built}/${b.max}</span></div>
         <div class="desc">${b.desc}</div>
         <div class="effect">${buildingYieldText(b)}</div>
-        <div class="cost">Cost: ${costString(b.cost) || "Free"}</div>
+        <div class="cost">Cost: ${costString(b.cost, g) || "Free"}</div>
         ${b.workers?`<div class="effect">Workers: ${b.workers}</div>`:""}`;
       const btn = el("button","primary small", _buildToPlace===id ? "Selected for map placement" : "Place on Map");
       btn.disabled = !unlocked || !canPay(g,b.cost) || built>=b.max;
@@ -590,11 +624,14 @@ function renderSurvivorsTab(root){
   c.innerHTML = `<h3>👥 Survivors (${g.survivors.length})</h3>`;
   for (const s of g.survivors){
     const partner = s.partnerId ? survivorById(g, s.partnerId) : null;
+    const heart = g.courtship?.[s.id] || 0;
+    const canCourt = typeof eligibleForCourtship === "function" && eligibleForCourtship(g, s);
     const div = el("div","surv");
-    div.innerHTML = `<div class="head"><div><b>${s.isPlayer?"⭐ ":""}${s.name}</b>${s.isChild?" 👶":""} <span class="muted">${s.isChild?"child":"adult, age "+s.age}</span></div>
+    div.innerHTML = `<div class="head"><div><b>${s.isPlayer?"⭐ ":""}${s.name}</b>${s.isChild?" 👶":""} <span class="muted">${s.sex==="F"?"female":"male"}, ${s.isChild?"child":"adult, age "+s.age}</span></div>
       <div class="muted">${s.isPlayer?"(You)":""}</div></div>
       <div class="traits">${s.traits.map(t=>'<span class="badge">'+TRAITS[t].label+'</span>').join(" ")}
-        ${partner?'<span class="badge">💞 '+partner.name+'</span>':""}
+        ${partner?'<span class="badge">💍 '+partner.name+'</span>':""}
+        ${heart?'<span class="badge">❤ Heart '+heart+'/100</span>':""}
         ${s.diseased?'<span class="badge" style="background:#5a1f1f;color:#ffb0b0">🤒 Diseased</span>':""}
         ${s.injured?'<span class="badge" style="background:#5a3a1f;color:#ffd5a0">🩹 Injured</span>':""}
       </div>
@@ -609,15 +646,45 @@ function renderSurvivorsTab(root){
       <div class="muted" style="font-size:11px;margin-top:4px">
         Job: <b>${JOBS[s.job||"none"].name}</b> · Days: ${s.daysSurvived}
       </div>`;
+    if (canCourt){
+      const row = el("div", "row");
+      const court = el("button", "small", "Court");
+      court.onclick = ()=> courtSurvivor(s.id);
+      row.appendChild(court);
+      const marry = el("button", "primary small", "Marry");
+      marry.disabled = heart < 100;
+      marry.title = heart < 100 ? "Win their heart first." : "Marry this survivor";
+      marry.onclick = ()=> marrySurvivor(s.id);
+      row.appendChild(marry);
+      div.appendChild(row);
+    }
     c.appendChild(div);
   }
   root.appendChild(c);
 }
 
+function jobOutputText(job){
+  const parts = [];
+  for (const r in job.output || {}){
+    const v = job.output[r];
+    if (!v) continue;
+    if (RESOURCES[r]) parts.push(`${RESOURCES[r].icon} +${v}/day ${RESOURCES[r].name}`);
+    else if (r === "knowledge") parts.push(`📚 +${v}/day Knowledge`);
+    else if (r === "reputation") parts.push(`🤝 +${v}/day Reputation`);
+    else if (r === "happiness_all") parts.push(`😊 +${v}/day Happiness to all`);
+    else if (r === "morale_all") parts.push(`✨ +${v}/day Morale to all`);
+  }
+  for (const r in job.consume || {}){
+    const v = job.consume[r];
+    if (RESOURCES[r]) parts.push(`${RESOURCES[r].icon} -${v}/day ${RESOURCES[r].name}`);
+  }
+  return parts.length ? parts.join(", ") : "No direct daily output; works through building effects or defense.";
+}
+
 function renderJobsTab(root){
   const g = G;
   const c = el("div","card");
-  c.innerHTML = `<h3>🛠 Assign Jobs</h3><div class="muted">Buildings have worker slots. General jobs (woodcutter, gatherer, water carrier, scavenger) don't need a building.</div>`;
+  c.innerHTML = `<h3>🛠 Assign Jobs</h3><div class="muted">General jobs work anywhere. Building jobs stay locked until you build the matching workplace and have an open worker slot.</div>`;
   const list = el("div");
   for (const s of adults(g)){
     if (s.isPlayer) continue;
@@ -627,13 +694,12 @@ function renderJobsTab(root){
     for (const jk of JOB_KEYS){
       const j = JOBS[jk];
       const available = jobAvailable(g, jk) || jk===cur;
-      if (j.building){
-        if (!g.buildings[j.building]) continue;
-      }
-      opts += `<option value="${jk}" ${jk===cur?"selected":""} ${available?"":"disabled"}>${j.name}${j.building?" ("+BUILDINGS[j.building].name+")":""}</option>`;
+      const out = jobOutputText(j);
+      opts += `<option value="${jk}" ${jk===cur?"selected":""} ${available?"":"disabled"}>${j.name}${j.building?" ("+BUILDINGS[j.building].name+")":""} - ${out}</option>`;
     }
     item.innerHTML = `<div class="head"><span class="name">${s.name}</span> <span class="muted">${s.traits.map(t=>TRAITS[t].label).join(", ")}</span></div>
-      <div class="desc">${JOBS[cur].desc}</div>`;
+      <div class="desc">${JOBS[cur].desc}</div>
+      <div class="desc"><b>Per day:</b> ${jobOutputText(JOBS[cur])}</div>`;
     const sel = el("select");
     sel.innerHTML = opts;
     sel.onchange = ()=> assignJob(s.id, sel.value);
@@ -772,7 +838,7 @@ function renderGuideTab(root){
         <li><b>Click a tile</b> on the World Map to auto-walk to it.</li>
         <li><kbd>Space</kbd> cancels auto-walk.</li>
         <li><b>Live / Paused</b> in the header toggles real-time ticking. The speed button cycles 1x / 2x / 3x.</li>
-        <li><b>Sleep</b> button (top-right) sleeps until next morning.</li>
+        <li><b>Sleep</b> button (top-right) sleeps 8 hours and restores full energy.</li>
         <li><b>Save / Load / Reset</b> are in the header. Game also autosaves after every action.</li>
         <li>Tabs switch between map, build, survivors, jobs, knowledge, buildings, scout, and this guide.</li>
       </ul>
@@ -785,10 +851,10 @@ function renderGuideTab(root){
         <li><b>❤ Health</b> — max usually 100 (tough trait = 120). At 0, you die.</li>
         <li><b>🍞 Hunger</b> — drops every tick. Eat food / cooked meals to refill.</li>
         <li><b>💧 Thirst</b> — drops faster than hunger. Drink clean water (or risky dirty water).</li>
-        <li><b>⚡ Energy</b> — used by every action and step. Below 5 = too exhausted to do anything. Rest or sleep restores it.</li>
+        <li><b>⚡ Energy</b> — used by every action and step. Below 5 = too exhausted to do anything. Rest or sleep restores it; housing improves recovery.</li>
         <li><b>🔥 Warmth</b> — drops at night and in cold biomes (snow). Campfire and shelter help.</li>
-        <li><b>😊 Happiness</b> — affected by hunger, thirst, cold, building auras (inn, tavern, shrine).</li>
-        <li><b>✨ Morale</b> — average of happiness and settlement safety.</li>
+        <li><b>😊 Happiness</b> — affected by hunger, thirst, cold, social actions, and building auras (inn, tavern, bathhouse).</li>
+        <li><b>✨ Morale</b> — based mostly on happiness and settlement safety; shrines, halls, town hall, and the Gather Spirits action help.</li>
         <li><b>🛡 Safety</b> — settlement-wide; raised by guards, walls and watchtowers.</li>
       </ul>
       <p><b>Conditions</b>: <span class="bad">🤒 Diseased</span> drains health every tick — cure with medicine or wait. <span class="warn">🩹 Injured</span> when below 50 HP; clinic workers heal it.</p>
@@ -796,24 +862,29 @@ function renderGuideTab(root){
 
     <div class="guide-section" id="g-actions">
       <h3>⚡ Quick Actions (Left Panel)</h3>
-      <p>These let you do small chores anywhere on the map. Each costs energy and most consume one phase of time.</p>
+      <p>These let you do small chores when your current map position and supplies make them possible. Disabled buttons show the missing requirement on hover.</p>
       <ul>
         <li><b>🍞 Eat</b> — instant, uses 1 food, +30 hunger.</li>
         <li><b>💧 Drink</b> — instant, uses water or risky dirty water.</li>
-        <li><b>💤 Rest</b> — short rest, +15–25 energy (1 phase).</li>
-        <li><b>🪓 Chop Wood</b> — +3–6 wood (1 phase).</li>
-        <li><b>🌿 Forage</b> — +food, herbs, seeds (1 phase).</li>
-        <li><b>🪣 Fetch Water</b> — +3–6 dirty water (1 phase).</li>
-        <li><b>🔥 Boil Water</b> — 2 dirty + 1 wood → 2 clean water.</li>
+        <li><b>💤 Rest</b> — short 2-hour rest near housing, shelter, or campfire, +25 energy.</li>
+        <li><b>🪓 Chop Wood</b> — +3–6 wood near forest, deep forest, or wood features (1 phase).</li>
+        <li><b>🌿 Forage</b> — +food, herbs, seeds near forageable terrain or plants (1 phase).</li>
+        <li><b>🪣 Fetch Water</b> — water source must be on your tile or one tile away; takes 1 hour and gives 1 water or dirty water.</li>
+        <li><b>🔥 Boil Water</b> — 2 dirty + 1 wood → 2 clean water at a nearby fire.</li>
+        <li><b>⬛ Purify Water</b> — 2 dirty + 1 charcoal → 2 clean water.</li>
         <li><b>🍳 Cook</b> — 1 meat or 2 crops + 1 wood → 3 food.</li>
+        <li><b>🔥 Warm Up</b> — use wood or charcoal at a fire for warmth, a little energy, and happiness.</li>
+        <li><b>🕯 Gather Spirits</b> — spend time to raise happiness and morale for the group.</li>
+        <li><b>🏹 Craft Arrows</b> — 1 wood + 1 bone → 3–5 arrows.</li>
+        <li><b>🏹 Hunt</b> — spend 1 arrow to shoot a visible animal 1–3 tiles away.</li>
       </ul>
-      <p>Also via the header: <b>Sleep</b> jumps to next morning (+60 energy), and there's <b>Train</b> and <b>Study</b> if you've built the right things.</p>
+      <p>Also via the header: <b>Sleep</b> takes 8 hours and restores full energy. <b>Train</b> and <b>Study</b> are available if you have the right resources/buildings.</p>
     </div>
 
     <div class="guide-section" id="g-map">
       <h3>🗺 World Map</h3>
       <p>The map is a 60×36 grid of biomes. Your viewport follows you. Tiles you've seen are remembered (fog); unseen tiles are black. <b>Vision shrinks at night</b> from 6 tiles to 3.</p>
-      <p>Movement cost depends on biome — roads (1) are fastest, plains (1), forest (2), mountains/deep forest (3). Rivers and lakes <b>block</b> movement entirely. Low warmth, hunger, thirst, injury, and disease make walking cost more energy. Each step drains energy and, after enough steps, advances the world clock by a phase.</p>
+      <p>Movement cost depends on biome — roads (1) are fastest, plains (1), forest (2), mountains/deep forest (3). Rivers and lakes <b>block</b> movement entirely. Low warmth, hunger, thirst, injury, and disease make walking cost more energy. Each step drains energy and advances the clock based on that effort.</p>
       <p><b>Hazardous biomes</b>: swamps and irradiated zones can damage you when you walk through; radiation can give you disease. Snow drains warmth fast.</p>
       <p><b>Your village</b> is the 🔥 marker — adjacent to it, your followers join your settlement and you're "at home" for trading/recruiting purposes.</p>
     </div>
@@ -829,6 +900,7 @@ function renderGuideTab(root){
         <li><b>Hidden hazards</b> (landmines, traps, pitfalls) — invisible until you step on them. Hurt!</li>
         <li><b>Friendly NPCs</b> (🧒 child, 🤕 wounded, 🚶 wanderer, 🧙 hermit, 🩺 doctor, 🔧 mechanic, 📖 scholar, 🐶 dog, 👨‍👩‍👧 refugees…) — open a dialog with options. Pick "Take with you" and they'll appear in the "Following" strip. Walk to your 🔥 campfire to recruit them.</li>
         <li><b>Hostile entities</b> (🐺 wolves, 🐻 bears, 🧟 infected, 🥷 raiders, 👹 mutants…) — start combat on contact. Some (🦇 night stalkers) only appear at night.</li>
+        <li><b>Huntable animals</b> (🐇 rabbits, 🦌 deer, 🐗 boar, 🦃 turkeys, 🐐 goats) — run when approached. Use the Hunt quick action from 1–3 tiles away.</li>
         <li><b>Events</b> (strange shrines, old radios, music boxes, caches, glowing woods, map fragments, signal fires, graveyards) — trigger random good or bad effects.</li>
       </ul>
     </div>
@@ -890,7 +962,8 @@ function renderGuideTab(root){
         <li>Scavenging in old ruins.</li>
       </ul>
       <p><b>Traits</b> (Brave, Hardworking, Medic, Hunter, Builder, Cook, etc.) modify combat, job output, and morale auras.</p>
-      <p><b>Relationships</b>: unpartnered adults may form bonds (if housing allows). Partners may have a <b>child</b> on day-end (slow rate, needs spare housing). Children grow over ~20 days into adults; <b>schools</b> double growth speed.</p>
+      <p><b>Relationships</b>: survivors are male or female. Unpartnered adults of opposite sex may form bonds if housing allows. You can also <b>Court</b> an eligible survivor in this tab, then <b>Marry</b> once their heart reaches 100.</p>
+      <p><b>Lineage</b>: married partners may have a child on day-end (slow rate, needs spare housing). If you die and have a living child, you continue as that child so your family line survives. Children grow over ~20 days into adults; <b>schools</b> double growth speed.</p>
     </div>
 
     <div class="guide-section" id="g-defense">
@@ -1000,6 +1073,7 @@ function detectHint(g){
   if (p.energy < 15) return "I'm exhausted — I should <b>Sleep</b> (top-right button) or use the <b>💤 Rest</b> action. Walking with empty energy will get me stuck.";
   if (p.thirst < 20){
     if (g.resources.water >= 1) return "I'm parched. I have clean water — hit the <b>💧 Drink</b> action in the left panel.";
+    if (g.resources.dirty_water >= 2 && g.resources.charcoal >= 1) return "I'm parched. Use <b>⬛ Purify Water</b> to filter dirty water through charcoal, then drink.";
     if (g.resources.dirty_water >= 2 && g.resources.wood >= 1) return "I'm parched. Use <b>🔥 Boil Water</b> to turn dirty water into safe water, then drink.";
     return "I'm parched and there's no water at camp. I should find a <b>spring (💧), pond, stream</b>, or the river on the map — then bring it back and boil it.";
   }
@@ -1014,8 +1088,8 @@ function detectHint(g){
     return "I'm <b>diseased</b>. I need medicine — search hospitals, medicine cabinets, or research <b>Herbalism</b> to brew it from herbs.";
   }
   if (p.warmth < 25){
-    if (g.phase === 3) return "I'm freezing at night. Get next to the 🔥 campfire — adjacent tiles share warmth. Or find a hot spring.";
-    return "I'm cold. Head back toward camp and the campfire, or find shelter.";
+    if (g.phase === 3) return "I'm freezing at night. Use <b>🔥 Warm Up</b> if I have wood or charcoal, or get next to the campfire / shelter.";
+    return "I'm cold. Use <b>🔥 Warm Up</b>, head back toward camp, or find shelter.";
   }
 
   // Resource shortages

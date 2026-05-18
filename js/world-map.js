@@ -86,7 +86,7 @@ function generateMap(g){
   // Sprinkle features
   populateFeatures(g, 1400);
   // Sprinkle entities
-  populateEntities(g, 450);
+  populateEntities(g, 650);
   // Place the unique Old Sage within sight of the village
   placeSage(g);
 
@@ -272,7 +272,7 @@ function tryMove(g, dx, dy){
   g.playerX = nx; g.playerY = ny;
   p.energy = clamp(p.energy - cost, 0, 100);
   if (b.cold) p.warmth = clamp(p.warmth - 4, 0, 100);
-  g.stepAccum += cost;
+  g.stepAccum = 0;
   // small hunger/thirst drift
   if (chance(0.5)) p.hunger = clamp(p.hunger-1,0,100);
   if (chance(0.5)) p.thirst = clamp(p.thirst-1,0,100);
@@ -289,11 +289,8 @@ function tryMove(g, dx, dy){
   // Trigger encounter on the new tile
   encounterTile(g, nx, ny);
 
-  // Tick the world if enough steps
-  while (g.stepAccum >= STEP_PER_PHASE){
-    g.stepAccum -= STEP_PER_PHASE;
-    advanceOnePhase(g);
-  }
+  // Walking advances time based on movement effort: 14 walking energy ~= one 6-hour phase.
+  passMinutes(g, Math.round((cost / STEP_PER_PHASE) * 360));
 
   // If reached village area, recruit followers
   if (isAdjacentToVillage(g) && g.followers.length > 0){
@@ -404,6 +401,87 @@ function tryMoveQuiet(g, dx, dy){
   return tryMove(g, dx, dy);
 }
 
+function tileDistance(g, x, y){
+  return Math.max(Math.abs(x-g.playerX), Math.abs(y-g.playerY));
+}
+
+function tileWaterKind(tile){
+  const ft = tile.feature?.type;
+  if (["spring","old_well","hot_spring"].includes(ft)) return "clean";
+  if (["pond","stream","rain_pool","fish_pool"].includes(ft)) return "dirty";
+  if (BIOMES[tile.biome]?.water) return "dirty";
+  return "";
+}
+
+function fetchWaterFromTile(g, tile){
+  const kind = tileWaterKind(tile);
+  if (!kind) return;
+  const p = g.survivors[0];
+  addResource(g, kind==="clean" ? "water" : "dirty_water", 1);
+  p.energy = clamp(p.energy - 1, 0, 100);
+  p.thirst = clamp(p.thirst - 1, 0, 100);
+  pushLog(g, kind==="clean" ? "You fetched clean water. (+1 water)" : "You fetched water. (+1 dirty water)", "good");
+  passMinutes(g, 60);
+  render(); save();
+}
+
+function openTileActionDialog(g, x, y){
+  if (!inBounds(x,y)) return;
+  const tile = g.map[y][x];
+  const dist = tileDistance(g,x,y);
+  const biome = BIOMES[tile.biome];
+  const feature = tile.feature && MAP_FEATURES[tile.feature.type];
+  const entity = tile.entity && MAP_ENTITIES[tile.entity.type];
+  const building = tile.settlementBuilding && BUILDINGS[tile.settlementBuilding];
+  const titleParts = [];
+  if (entity && (!entity.nightOnly || g.phase===3)) titleParts.push(`${entity.icon} ${entity.name}`);
+  if (feature && !feature.hidden) titleParts.push(`${feature.icon} ${feature.name}`);
+  if (building) titleParts.push(`${building.icon} ${building.name}`);
+  titleParts.push(`${biome.icon} ${biome.name}`);
+  const lines = [];
+  if (entity) lines.push(`<p><b>Entity:</b> ${entity.icon} ${escapeHtml(entity.name)}${entity.hostile ? " <span class='bad'>hostile</span>" : ""}</p>`);
+  if (feature && !feature.hidden) lines.push(`<p><b>Feature:</b> ${feature.icon} ${escapeHtml(feature.name)} — ${escapeHtml(feature.desc || "")}</p>`);
+  if (building) lines.push(`<p><b>Settlement:</b> ${building.icon} ${escapeHtml(building.name)} — ${escapeHtml(building.desc || "")}</p>`);
+  lines.push(`<p class="muted">Distance: ${dist} tile${dist===1?"":"s"}. Right-click nearby tiles to choose an action.</p>`);
+  const buttons = [];
+  if (!(x===g.playerX && y===g.playerY) && !biome.blocks){
+    buttons.push({label:"Walk here", primary:true, action:()=>{ closeModal(); startAutoWalk(x,y); }});
+  }
+  if (feature && !feature.hidden){
+    buttons.push({label:dist<=1 ? "Search / use" : "Walk and search", action:()=>{
+      closeModal();
+      if (dist<=1){ handleFeature(g, tile, x, y); render(); save(); }
+      else startAutoWalk(x,y);
+    }});
+  }
+  const waterKind = tileWaterKind(tile);
+  if (waterKind){
+    buttons.push({label:waterKind==="clean" ? "Fetch clean water (1h)" : "Fetch dirty water (1h)", action:()=>{ closeModal(); fetchWaterFromTile(g, tile); }});
+  }
+  if (entity && entity.friendly){
+    buttons.push({label:dist<=3 ? "Talk" : "Walk to talk", action:()=>{
+      closeModal();
+      if (dist<=3) openFriendlyDialog(g, entity, x, y);
+      else startAutoWalk(x,y);
+    }});
+  }
+  if (entity && entity.huntable){
+    const canHunt = dist>=1 && dist<=3 && g.resources.arrows>=1;
+    buttons.push({label:"Hunt with arrow", disabled:!canHunt, title:canHunt ? "" : "Need arrows and range 1-3.", action:()=>{
+      closeModal(); huntTarget({tile, x, y, entity, dist});
+    }});
+  }
+  if (entity && entity.hostile){
+    buttons.push({label:dist<=1 ? "Engage" : "Approach / attack", action:()=>{ closeModal(); if (dist<=1) encounterTile(g,x,y); else startAutoWalk(x,y); }});
+  }
+  if (dist<=1 && (building || (x===g.villageX && y===g.villageY))){
+    buttons.push({label:"Rest here (2h)", action:()=>{ closeModal(); playerAction("rest"); }});
+    buttons.push({label:"Warm up", action:()=>{ closeModal(); playerAction("warm_fire"); }});
+  }
+  buttons.push({label:"Cancel", action:closeModal});
+  showModal({title:titleParts.join(" / "), body:lines.join(""), buttons});
+}
+
 // --- Encounters ---
 
 function encounterTile(g, x, y){
@@ -423,6 +501,10 @@ function encounterTile(g, x, y){
           });
           return;
         }
+        if (e.huntable){
+          scareAnimal(g, t, e, x, y);
+          return;
+        }
         if (e.friendly){
           openFriendlyDialog(g, e, x, y);
           return;
@@ -433,6 +515,34 @@ function encounterTile(g, x, y){
   if (t.feature){
     handleFeature(g, t, x, y);
   }
+}
+
+function scareAnimal(g, tile, animal, x, y){
+  if (chance(animal.fleeChance ?? 0.7) && moveAnimalAway(g, x, y)){
+    pushLog(g, `${animal.name} bolts away before you can grab it. Use arrows to hunt from a distance.`, "warn");
+  } else {
+    tile.entity = null;
+    pushLog(g, `${animal.name} vanishes into cover.`, "warn");
+  }
+}
+
+function moveAnimalAway(g, x, y){
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const options = [];
+  for (const [dx,dy] of dirs){
+    const nx=x+dx, ny=y+dy;
+    if (!inBounds(nx,ny)) continue;
+    const t = g.map[ny][nx];
+    if (!t || t.entity || t.feature || t.settlementBuilding) continue;
+    if (BIOMES[t.biome].blocks || BIOMES[t.biome].hazard || BIOMES[t.biome].radiation) continue;
+    if (Math.abs(nx-g.playerX) <= 1 && Math.abs(ny-g.playerY) <= 1) continue;
+    options.push([nx,ny]);
+  }
+  if (!options.length) return false;
+  const [nx,ny] = pick(options);
+  g.map[ny][nx].entity = g.map[y][x].entity;
+  g.map[y][x].entity = null;
+  return true;
 }
 
 function handleFeature(g, t, x, y){
@@ -1064,8 +1174,10 @@ function refreshMapDaily(g){
     if (t.feature || t.entity || BIOMES[t.biome].blocks) continue;
     if (Math.abs(x-g.villageX)<=3 && Math.abs(y-g.villageY)<=3) continue;
     // mostly hostile to keep pressure
-    const pool = chance(0.4) ? Object.keys(MAP_ENTITIES).filter(k=>MAP_ENTITIES[k].friendly)
-                              : Object.keys(MAP_ENTITIES).filter(k=>MAP_ENTITIES[k].hostile);
+    const roll = rng();
+    const pool = roll < 0.35 ? Object.keys(MAP_ENTITIES).filter(k=>MAP_ENTITIES[k].friendly)
+               : roll < 0.7 ? Object.keys(MAP_ENTITIES).filter(k=>MAP_ENTITIES[k].huntable)
+               : Object.keys(MAP_ENTITIES).filter(k=>MAP_ENTITIES[k].hostile);
     const fits = pool.filter(k=>(MAP_ENTITIES[k].biomes||[]).includes(t.biome));
     if (!fits.length) continue;
     t.entity = {type:pick(fits)};

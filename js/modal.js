@@ -11,6 +11,8 @@ function showModal({title, body, buttons}){
   const acts = el("div","actions");
   for (const b of buttons||[{label:"OK",action:closeModal}]){
     const btn = el("button", b.primary?"primary":"", b.label);
+    if (b.disabled) btn.disabled = true;
+    if (b.title) btn.title = b.title;
     btn.onclick = b.action;
     acts.appendChild(btn);
   }

@@ -3,7 +3,13 @@
 // ------------------------- ACTIONS ------------------------------
 
 function passPhase(g, phases=1, reason=""){
-  for (let i=0; i<phases; i++){
+  passMinutes(g, phases * 360);
+}
+
+function passMinutes(g, minutes){
+  g.phaseMinutes = (g.phaseMinutes || 0) + Math.max(0, minutes || 0);
+  while (g.phaseMinutes >= 360){
+    g.phaseMinutes -= 360;
     advanceOnePhase(g);
   }
 }
@@ -203,10 +209,26 @@ function produceFromJobs(g){
     if (!s || s.isPlayer || s.isChild || s.health<=0) continue;
     const jobKey = g.jobs[s.id] || s.job || "none";
     const job = JOBS[jobKey];
-    if (!job || jobKey==="none" || job.building) continue;
+    if (!job || jobKey==="none") continue;
     const boost = workerJobBonus(s, jobKey);
+    let canWork = true;
+    for (const r in job.consume || {}){
+      const need = job.consume[r] / TICKS_PER_DAY;
+      if ((g.resources[r]||0) < need) canWork = false;
+    }
+    if (!canWork) continue;
+    for (const r in job.consume || {}) g.resources[r] -= job.consume[r] / TICKS_PER_DAY;
     for (const r in job.output || {}){
-      addResource(g, r, job.output[r] * boost / TICKS_PER_DAY);
+      if (job.building && RESOURCES[r]) continue; // building production already handles resource outputs
+      const amount = job.output[r] * boost / TICKS_PER_DAY;
+      if (RESOURCES[r]) addResource(g, r, amount);
+      else if (r === "knowledge") g.knowledge += amount;
+      else if (r === "reputation") g.reputation += amount;
+      else if (r === "happiness_all"){
+        for (const o of g.survivors) o.happiness = clamp(o.happiness + amount, 0, 100);
+      } else if (r === "morale_all"){
+        for (const o of g.survivors) o.morale = clamp(o.morale + amount, 0, 100);
+      }
     }
     if (jobKey==="scavenger" && chance(0.08 / TICKS_PER_DAY)){
       const dmg = rint(3,10);
@@ -330,7 +352,7 @@ function onDayEnd(g){
     if (rel.type==="partner"){
       const a = survivorById(g,rel.a), b = survivorById(g,rel.b);
       if (!a||!b) continue;
-      if (a.isChild||b.isChild) continue;
+      if (a.isChild||b.isChild || !canHaveChild(a,b)) continue;
       // need housing for new child
       if (getHousing(g) > g.survivors.length){
         if (chance(0.04)){
@@ -365,6 +387,7 @@ function removeDead(g){
       }
       if (s.isPlayer){
         if (attemptPlayerRescue(g, s)) return;
+        if (continueAsHeir(g, s)) return;
         // game over modal
         showModal({
           title:"You Have Perished",
@@ -373,13 +396,55 @@ function removeDead(g){
         });
         return;
       }
-      // remove relationships
-      g.relationships = g.relationships.filter(r=> r.a!==s.id && r.b!==s.id);
-      g.survivors.splice(i,1);
-      // morale drop
-      for (const o of g.survivors) o.happiness = clamp(o.happiness - 8, 0, 100);
+      burySurvivor(g, i);
     }
   }
+}
+
+function burySurvivor(g, index){
+  const s = g.survivors[index];
+  if (!s) return;
+  if (s.partnerId){
+    const partner = survivorById(g, s.partnerId);
+    if (partner) partner.partnerId = null;
+  }
+  g.relationships = g.relationships.filter(r=> r.a!==s.id && r.b!==s.id);
+  if (g.courtship) delete g.courtship[s.id];
+  g.survivors.splice(index,1);
+  for (const o of g.survivors) o.happiness = clamp(o.happiness - 8, 0, 100);
+}
+
+function continueAsHeir(g, player){
+  const heirs = g.survivors.filter(s => s && !s.isPlayer && s.health>0 && s.parentIds?.includes(player.id));
+  if (!heirs.length) return false;
+  heirs.sort((a,b)=>(b.age||0)-(a.age||0));
+  const heir = heirs[0];
+  const oldIndex = g.survivors.indexOf(player);
+  player.isPlayer = false;
+  heir.isPlayer = true;
+  heir.isChild = false;
+  heir.age = Math.max(14, heir.age || 14);
+  heir.maxHealth = Math.max(heir.maxHealth || 60, 90);
+  heir.health = Math.max(heir.health, 50);
+  heir.energy = Math.max(heir.energy, 60);
+  heir.hunger = Math.max(heir.hunger, 50);
+  heir.thirst = Math.max(heir.thirst, 50);
+  heir.warmth = Math.max(heir.warmth, 50);
+  g.playerName = heir.name;
+  g.playerSex = heir.sex;
+  if (oldIndex >= 0) burySurvivor(g, oldIndex);
+  const heirIndex = g.survivors.indexOf(heir);
+  if (heirIndex > 0){
+    g.survivors.splice(heirIndex, 1);
+    g.survivors.unshift(heir);
+  }
+  pushLog(g, `${heir.name}, your child, takes up your line and leads the settlement.`, "good");
+  showModal({
+    title:"The Line Continues",
+    body:`<p>You died on day ${g.day}, but your child <b>${heir.name}</b> survives.</p><p>You now continue as ${heir.name}. Your family line has not ended.</p>`,
+    buttons:[{label:"Continue", primary:true, action:()=>{ closeModal(); render(); save(); }}]
+  });
+  return true;
 }
 
 function attemptPlayerRescue(g, player){
@@ -410,7 +475,132 @@ function attemptPlayerRescue(g, player){
 
 // --- Player Actions ---
 
-const RECOVERY_ACTIONS = new Set(["rest","sleep","eat","drink"]);
+const RECOVERY_ACTIONS = new Set(["rest","sleep","eat","drink","warm_fire"]);
+
+const WOOD_FEATURES = new Set(["dead_tree","fallen_log","pine_grove","ancient_oak"]);
+const FORAGE_FEATURES = new Set(["berry_bush","mushroom_patch","wild_herbs","apple_tree","edible_roots","wild_wheat","bird_nest","beehive","seed_pod"]);
+const WATER_FEATURES = new Set(["spring","old_well","pond","stream","rain_pool","hot_spring","fish_pool"]);
+
+function nearbySettlementBuilding(g, predicate){
+  if (!g.map) return null;
+  for (let dy=-1; dy<=1; dy++){
+    for (let dx=-1; dx<=1; dx++){
+      const x = g.playerX + dx, y = g.playerY + dy;
+      if (!inBounds(x,y)) continue;
+      const id = g.map[y][x]?.settlementBuilding;
+      const b = id && BUILDINGS[id];
+      if (b && predicate(b, id)) return {id, building:b};
+    }
+  }
+  return null;
+}
+
+function nearbyTile(g, radius, predicate){
+  if (!g.map) return null;
+  for (let dy=-radius; dy<=radius; dy++){
+    for (let dx=-radius; dx<=radius; dx++){
+      const x = g.playerX + dx, y = g.playerY + dy;
+      if (!inBounds(x,y)) continue;
+      const t = g.map[y][x];
+      if (t && predicate(t, x, y, dx, dy)) return {tile:t, x, y, dx, dy};
+    }
+  }
+  return null;
+}
+
+function nearbyWaterSource(g){
+  return nearbyTile(g, 1, t => BIOMES[t.biome]?.water || (t.feature && WATER_FEATURES.has(t.feature.type)));
+}
+
+function nearbyWoodSource(g){
+  return nearbyTile(g, 1, t => t.biome==="forest" || t.biome==="deep_forest" || (t.feature && WOOD_FEATURES.has(t.feature.type)));
+}
+
+function nearbyForageSource(g){
+  return nearbyTile(g, 1, t => ["plains","forest","deep_forest","hills"].includes(t.biome) || (t.feature && FORAGE_FEATURES.has(t.feature.type)));
+}
+
+function nearbyRestSpot(g){
+  return nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.housing || !!b.effects?.warmth);
+}
+
+function nearbyFire(g){
+  return nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.warmth || !!b.effects?.cook);
+}
+
+function findHuntTarget(g){
+  const visible = typeof computeVisible === "function" ? computeVisible(g) : {};
+  let best = null;
+  nearbyTile(g, 3, (t, x, y) => {
+    if (!t.entity || !visible[x+","+y]) return false;
+    const e = MAP_ENTITIES[t.entity.type];
+    if (!e?.huntable) return false;
+    const dist = Math.max(Math.abs(x-g.playerX), Math.abs(y-g.playerY));
+    if (dist < 1 || dist > 3) return false;
+    if (!best || dist < best.dist) best = {tile:t, x, y, entity:e, dist};
+    return false;
+  });
+  return best;
+}
+
+function huntTarget(target){
+  const g = G;
+  const p = g.survivors[0];
+  if (!target || !target.tile?.entity) return false;
+  if (g.resources.arrows < 1){ pushLog(g, "Need arrows.", "warn"); render(); return false; }
+  g.resources.arrows -= 1;
+  const hitChance = clamp(0.45 + p.skills.combat*0.04 + (p.traits.includes("hunter")?0.12:0), 0.25, 0.88);
+  p.energy -= 7; p.hunger -= 2; p.thirst -= 2;
+  if (chance(hitChance)){
+    for (const r in target.entity.loot || {}) addResource(g, r, rint(target.entity.loot[r][0], target.entity.loot[r][1]));
+    target.tile.entity = null;
+    pushLog(g, `Your arrow drops a ${target.entity.name.toLowerCase()}. You dress the kill.`, "good");
+  } else {
+    if (target.entity.danger && chance(0.25)){
+      const d = rint(target.entity.danger[0], target.entity.danger[1]);
+      p.health = clamp(p.health - d, 0, p.maxHealth);
+      pushLog(g, `You miss. The ${target.entity.name.toLowerCase()} charges before fleeing. (-${d} HP)`, "bad");
+    } else {
+      pushLog(g, `You miss. The ${target.entity.name.toLowerCase()} runs.`, "warn");
+    }
+    moveAnimalAway(g, target.x, target.y) || (target.tile.entity = null);
+  }
+  passPhase(g,1);
+  render(); save();
+  return true;
+}
+
+function quickActionBlocker(g, actionKey){
+  const p = g.survivors[0];
+  if (!p || p.health<=0) return "You are down.";
+  if (p.energy < 5 && !RECOVERY_ACTIONS.has(actionKey)) return "Too exhausted.";
+  switch(actionKey){
+    case "chop_wood": return nearbyWoodSource(g) ? "" : "Stand on or next to forest, deep forest, or wood.";
+    case "gather": return nearbyForageSource(g) ? "" : "Stand on or next to forageable land or plants.";
+    case "fetch_water": return nearbyWaterSource(g) ? "" : "Stand on or next to water.";
+    case "boil_water": return canPay(g,{dirty_water:2, wood:1}) ? (nearbyFire(g) ? "" : "Need a nearby fire.") : "Need 2 dirty water and 1 wood.";
+    case "purify_water": return canPay(g,{dirty_water:2, charcoal:1}) ? "" : "Need 2 dirty water and 1 charcoal.";
+    case "cook": return canPay(g, g.resources.meat>=1 ? {meat:1, wood:1} : {crops:2, wood:1}) ? (nearbyFire(g) ? "" : "Need a nearby fire.") : "Need meat or crops, plus wood.";
+    case "eat": return g.resources.food>=1 ? "" : "No food.";
+    case "drink": return (g.resources.water>=1 || g.resources.dirty_water>=1) ? "" : "No water.";
+    case "rest": return nearbyRestSpot(g) ? "" : "Rest near housing, shelter, or campfire.";
+    case "warm_fire": return nearbyFire(g) ? ((g.resources.wood>=1 || g.resources.charcoal>=1) ? "" : "Need wood or charcoal.") : "Need a nearby fire.";
+    case "gather_spirits": return nearbyRestSpot(g) ? "" : "Gather near camp or housing.";
+    case "craft_arrows": return canPay(g,{wood:1, bones:1}) ? "" : "Need 1 wood and 1 bone.";
+    case "hunt": return g.resources.arrows>=1 ? (findHuntTarget(g) ? "" : "Need a visible animal 1-3 tiles away.") : "Need arrows.";
+    case "study": return g.resources.books>=1 ? "" : "Need a book.";
+    case "train": return g.buildings.training_yard ? "" : "Need a training yard.";
+  }
+  return "";
+}
+
+function restEnergyBonus(g){
+  const nearbyHome = nearbySettlementBuilding(g, b => !!b.effects?.housing);
+  if (nearbyHome) return {amount:15, label:`near ${nearbyHome.building.name}`};
+  const fire = nearbyFire(g);
+  if (fire) return {amount:8, label:`near ${fire.building.name}`};
+  return {amount:0, label:""};
+}
 
 function playerAction(actionKey){
   const g = G;
@@ -420,41 +610,52 @@ function playerAction(actionKey){
     pushLog(g, "You are too exhausted. Rest or sleep first.","warn");
     render(); return;
   }
+  const blocker = quickActionBlocker(g, actionKey);
+  if (blocker){ pushLog(g, blocker, "warn"); render(); return; }
   switch(actionKey){
     case "chop_wood":{
       const amount = rint(3,6) + (p.traits.includes("hardworking")?1:0);
       addResource(g, "wood", amount);
-      p.energy -= 10; p.hunger -= 4; p.thirst -= 4;
+      p.energy -= 5; p.hunger -= 2; p.thirst -= 2;
       pushLog(g, `You chopped wood. (+${amount} wood)`, "good");
       passPhase(g,1); break;
     }
     case "gather":{
       const food = rint(1,3), herbs = rint(0,2), seeds = rint(0,2);
       addResource(g,"food",food); addResource(g,"herbs",herbs); addResource(g,"seeds",seeds);
-      p.energy -= 8; p.hunger -= 3; p.thirst -= 3;
+      p.energy -= 4; p.hunger -= 2; p.thirst -= 2;
       pushLog(g,`You foraged. (+${food} food, +${herbs} herbs, +${seeds} seeds)`,"good");
       passPhase(g,1); break;
     }
     case "fetch_water":{
-      const amt = rint(3,6);
-      addResource(g, "dirty_water", amt);
-      p.energy -= 8; p.hunger -= 2; p.thirst -= 5;
-      pushLog(g, `You fetched water. (+${amt} dirty water)`, "good");
-      passPhase(g,1); break;
+      const source = nearbyWaterSource(g);
+      const clean = source && ["spring","old_well","hot_spring"].includes(source.tile.feature?.type);
+      addResource(g, clean ? "water" : "dirty_water", 1);
+      p.energy -= 1; p.thirst -= 1;
+      pushLog(g, clean ? "You fetched clean water. (+1 water)" : "You fetched water. (+1 dirty water)", "good");
+      passMinutes(g,60); break;
     }
     case "boil_water":{
       const cost = {dirty_water:2, wood:1};
       if (!canPay(g,cost)){ pushLog(g,"Need 2 dirty water and 1 wood.","warn"); render(); return; }
       pay(g,cost); addResource(g,"water",2);
-      p.energy -= 4;
+      p.energy -= 2;
       pushLog(g,"You boiled water. (+2 clean water)","good");
+      passPhase(g,1); break;
+    }
+    case "purify_water":{
+      const cost = {dirty_water:2, charcoal:1};
+      if (!canPay(g,cost)){ pushLog(g,"Need 2 dirty water and 1 charcoal.","warn"); render(); return; }
+      pay(g,cost); addResource(g,"water",2);
+      p.energy -= 1;
+      pushLog(g,"You filtered dirty water through charcoal. (+2 clean water)","good");
       passPhase(g,1); break;
     }
     case "cook":{
       const cost = (g.resources.meat>=1?{meat:1, wood:1}:{crops:2, wood:1});
       if (!canPay(g,cost)){ pushLog(g,"Need either 1 meat or 2 crops, and 1 wood.","warn"); render(); return; }
       pay(g,cost); addResource(g,"food",3);
-      p.energy -= 5;
+      p.energy -= 2;
       pushLog(g,"You cooked a meal. (+3 food)","good");
       passPhase(g,1); break;
     }
@@ -470,27 +671,65 @@ function playerAction(actionKey){
       render(); save(); return;
     }
     case "rest":{
-      // short rest restores energy
-      const gain = rint(15,25);
+      // short rest restores 25% energy over 2 hours
+      const gain = 25;
       p.energy = clamp(p.energy + gain, 0, 100);
-      pushLog(g, `You rested briefly. (+${gain} energy)`, "info");
+      pushLog(g, `You rested for 2 hours. (+${gain} energy)`, "info");
+      passMinutes(g,120); break;
+    }
+    case "warm_fire":{
+      const nearbyFire = nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.warmth);
+      const hasCampfire = (g.buildings.campfire?.count||0) > 0;
+      if (!nearbyFire && !hasCampfire){ pushLog(g,"You need a campfire or warm building first.","warn"); render(); return; }
+      const fuel = g.resources.charcoal >= 1 ? "charcoal" : (g.resources.wood >= 1 ? "wood" : null);
+      if (!fuel){ pushLog(g,"Need 1 wood or 1 charcoal to feed the fire.","warn"); render(); return; }
+      g.resources[fuel] -= 1;
+      p.warmth = clamp(p.warmth + 35, 0, 100);
+      p.happiness = clamp(p.happiness + 3, 0, 100);
+      p.energy = clamp(p.energy + 5, 0, 100);
+      pushLog(g, `You fed the fire with ${RESOURCES[fuel].name.toLowerCase()} and warmed yourself.`, "good");
       passPhase(g,1); break;
     }
+    case "gather_spirits":{
+      const hasPeople = g.survivors.filter(s=>s.health>0).length > 1;
+      const safety = settlementSafety(g);
+      const happyGain = hasPeople ? 8 : 4;
+      const moraleGain = hasPeople ? 6 : 3;
+      p.energy -= 3;
+      for (const s of g.survivors){
+        if (!s || s.health<=0) continue;
+        s.happiness = clamp(s.happiness + happyGain, 0, 100);
+        s.morale = clamp(s.morale + moraleGain + Math.floor(safety/25), 0, 100);
+      }
+      pushLog(g, hasPeople ? "You shared stories and steadied everyone's nerves." : "You took a quiet moment to steady yourself.", "good");
+      passPhase(g,1); break;
+    }
+    case "craft_arrows":{
+      pay(g,{wood:1, bones:1});
+      const made = rint(3,5);
+      addResource(g,"arrows",made);
+      p.energy -= 2;
+      pushLog(g, `You carved arrow shafts and bone tips. (+${made} arrows)`, "good");
+      passPhase(g,1); break;
+    }
+    case "hunt":{
+      const target = findHuntTarget(g);
+      huntTarget(target); return;
+    }
     case "sleep":{
-      // sleep until next morning
-      const phases = (TICKS_PER_DAY - g.phase) + 0; // remaining phases of today end the day at next morning
-      passPhase(g, phases);
-      p.energy = clamp(p.energy + 60, 0, 100);
+      // sleep 8 hours
+      passMinutes(g, 480);
+      p.energy = 100;
       p.hunger = clamp(p.hunger - 6, 0, 100);
       p.thirst = clamp(p.thirst - 6, 0, 100);
-      pushLog(g, "You slept until morning.", "info");
+      pushLog(g, "You slept 8 hours. (full energy)", "info");
       break;
     }
     case "train":{
       // train combat
       if (!g.buildings.training_yard){ pushLog(g,"No training yard available.","warn"); render(); return; }
       p.skills.combat += 1;
-      p.energy -= 12; p.hunger -= 4;
+      p.energy -= 8; p.hunger -= 3;
       pushLog(g,"You trained at the yard. (+combat)","good");
       passPhase(g,1); break;
     }
@@ -499,7 +738,7 @@ function playerAction(actionKey){
       g.resources.books -= 1;
       const kp = rint(2,5);
       g.knowledge += kp;
-      p.energy -= 6;
+      p.energy -= 3;
       pushLog(g,`You studied a book. (+${kp} knowledge)`,"good");
       passPhase(g,1); break;
     }
@@ -755,14 +994,16 @@ function traderArrives(g){
     {give:{alcohol:2}, get:{books:1}},
     {give:{charcoal:4}, get:{iron:1}},
   ];
-  const offer = pick(offers);
+  const affordable = offers.filter(o=>canPay(g, o.give));
+  const offer = pick(affordable.length ? affordable : offers);
+  const canAccept = canPay(g, offer.give);
   showModal({
     title:"A Trader Arrives",
     body:`<p>A wanderer offers to trade:</p>
-      <p><b>Give:</b> ${Object.entries(offer.give).map(([k,v])=>v+" "+RESOURCES[k].name).join(", ")}<br/>
+      <p><b>Give:</b> ${costString(offer.give, g)}<br/>
       <b>Get:</b> ${Object.entries(offer.get).map(([k,v])=>v+" "+RESOURCES[k].name).join(", ")}</p>`,
     buttons:[
-      {label:"Accept", primary:true, action:()=>{
+      {label:"Accept", primary:true, disabled:!canAccept, title:canAccept?"":"You do not have the requested resources.", action:()=>{
         if (!canPay(G, offer.give)){ pushLog(G,"You couldn't fulfill the trade.","warn"); }
         else { pay(G, offer.give); for (const k in offer.get) addResource(G,k,offer.get[k]); pushLog(G,"Trade complete.","good"); G.reputation += 0.5; }
         closeModal(); render(); save();
@@ -777,7 +1018,7 @@ function tryRelationship(g){
   const eligible = adults(g).filter(s=> !s.partnerId && s.health>0 && !s.isChild);
   if (eligible.length < 2) return;
   const a = pick(eligible);
-  const others = eligible.filter(s=> s.id!==a.id);
+  const others = eligible.filter(s=> s.id!==a.id && s.sex!==a.sex);
   if (others.length===0) return;
   const b = pick(others);
   // require a roof
@@ -788,7 +1029,12 @@ function tryRelationship(g){
   a.happiness = clamp(a.happiness+10,0,100); b.happiness = clamp(b.happiness+10,0,100);
 }
 
+function canHaveChild(a, b){
+  return a && b && a.sex && b.sex && a.sex !== b.sex;
+}
+
 function birthChild(g, a, b){
+  if (!canHaveChild(a,b)) return;
   if (g.survivors.length >= getHousing(g)) return;
   const child = makeSurvivor("Child");
   child.isChild = true;
@@ -807,6 +1053,45 @@ function birthChild(g, a, b){
   pushLog(g, `${a.name} and ${b.name} welcomed a child: ${child.name}.`, "good");
   a.happiness = clamp(a.happiness+8,0,100);
   b.happiness = clamp(b.happiness+8,0,100);
+}
+
+function eligibleForCourtship(g, s){
+  const p = g.survivors[0];
+  return p && s && !s.isPlayer && !s.isChild && s.health>0 && !s.partnerId && !p.partnerId && s.sex !== p.sex;
+}
+
+function courtSurvivor(id){
+  const g = G;
+  const p = g.survivors[0];
+  const s = survivorById(g, id);
+  if (!eligibleForCourtship(g, s)){ pushLog(g, "Courtship is not possible right now.", "warn"); render(); return; }
+  if (p.energy < 6){ pushLog(g, "You are too exhausted to court anyone right now.", "warn"); render(); return; }
+  if (getHousing(g) < g.survivors.length){ pushLog(g, "You need enough housing before romance can grow.", "warn"); render(); return; }
+  const gain = rint(18,30) + (p.traits.includes("leader") ? 8 : 0);
+  g.courtship[id] = clamp((g.courtship[id] || 0) + gain, 0, 100);
+  p.energy -= 6;
+  p.happiness = clamp(p.happiness + 3, 0, 100);
+  s.happiness = clamp(s.happiness + 4, 0, 100);
+  pushLog(g, `You spend time with ${s.name}. Heart: ${g.courtship[id]}/100.`, "good");
+  passPhase(g, 1);
+  render(); save();
+}
+
+function marrySurvivor(id){
+  const g = G;
+  const p = g.survivors[0];
+  const s = survivorById(g, id);
+  if (!eligibleForCourtship(g, s)){ pushLog(g, "Marriage is not possible right now.", "warn"); render(); return; }
+  if ((g.courtship[id] || 0) < 100){ pushLog(g, "Win their heart first.", "warn"); render(); return; }
+  if (getHousing(g) < g.survivors.length){ pushLog(g, "You need enough housing before marriage.", "warn"); render(); return; }
+  p.partnerId = s.id;
+  s.partnerId = p.id;
+  g.relationships.push({a:p.id, b:s.id, type:"partner"});
+  delete g.courtship[id];
+  p.happiness = clamp(p.happiness + 15, 0, 100);
+  s.happiness = clamp(s.happiness + 15, 0, 100);
+  pushLog(g, `You and ${s.name} are married. Your family line can continue.`, "good");
+  render(); save();
 }
 
 // --- Threats / events ---

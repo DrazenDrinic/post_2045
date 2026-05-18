@@ -4,16 +4,18 @@ Project notes for AI coding agents (Claude Code, Codex, Cursor, Aider, etc.) wor
 
 ## What this project is
 
-A single-file, browser-based post-apocalyptic survival + town-builder + tile-map exploration game.
+A browser-based post-apocalyptic survival + town-builder + tile-map exploration game.
 
-- One file: `index.html` (HTML + CSS + JS embedded).
+- Entry point: `index.html`.
+- Styling lives in `css/styles.css`.
+- Game code lives in `js/*.js`, loaded directly by script tags.
 - No build, no package manager, no server, no dependencies, no external assets.
 - Saves to `localStorage` under the key `post_2045_save_v1`.
 - Designed to be opened directly in a browser.
 
 ## Hard constraints — do not violate
 
-1. **One file.** Everything lives in `index.html`. Do not introduce a build step, bundler, framework, or external script/CSS/image/font.
+1. Keep the current static-file architecture. Do not introduce a build step, bundler, framework, or external script/CSS/image/font.
 2. **No dependencies.** Vanilla HTML / CSS / JS only.
 3. **No network calls** at runtime.
 4. **Saves must keep loading.** `load()` backfills missing fields. If you change `G`'s shape in a way that can't be backfilled, bump `SAVE_KEY` instead of silently breaking existing saves.
@@ -23,31 +25,39 @@ A single-file, browser-based post-apocalyptic survival + town-builder + tile-map
 
 There are no automated tests. Before reporting work as done:
 
-1. Syntax-check the embedded script:
+1. Syntax-check the JavaScript files:
    ```
-   node -e "const fs=require('fs'); const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*)<\/script>/); fs.writeFileSync('_check.js', m[1]);"
-   node --check _check.js
-   rm _check.js
+   node --check js/data.js
+   node --check js/state.js
+   node --check js/helpers.js
+   node --check js/actions.js
+   node --check js/world-map.js
+   node --check js/render.js
+   node --check js/advisor.js
+   node --check js/modal.js
+   node --check js/persistence.js
+   node --check js/help.js
+   node --check js/main.js
    ```
 2. If your change is non-trivial, say in your summary that you have NOT manually playtested the change in a browser. Do not claim a feature works without trying it.
 
 ## Code map
 
-Inside the single `<script>` block in `index.html`, in top-to-bottom order:
+Script load order in `index.html`:
 
-| Section            | What lives there                                                                 |
-|--------------------|----------------------------------------------------------------------------------|
-| DATA tables        | `RESOURCES`, `ENEMIES`, `KNOWLEDGE`, `BUILDINGS`, `JOBS`, `TRAITS`, `LOCATIONS`, `BIOMES`, `MAP_FEATURES`, `MAP_ENTITIES`, names |
-| Constants          | `TICKS_PER_DAY`, `PHASES`, `MAP_W/H`, `VIEW_W/H`, `VISION_*`, `STEP_PER_PHASE`, `SAVE_KEY` |
-| State              | `G` (single global state), `newGame()`, `makeSurvivor()`                          |
-| Helpers            | `rng`, `pick`, `rint`, `chance`, `clamp`, `addResource`, `pushLog`, etc.          |
-| Tick / day system  | `passPhase`, `advanceOnePhase`, `applyTick`, `onDayEnd`, `decaySurvivor`, `produceFromBuildings`, `autoConsume`, `rollThreats`, `raidEvent` |
-| World map          | `generateMap`, `paintBlob`, `populateFeatures`, `populateEntities`, `computeVisible`, `tryMove`, `startAutoWalk` / `stepAutoWalk`, `encounterTile`, `handleFeature`, `triggerEvent`, `openFriendlyDialog`, `recruitFollowersAtVillage`, `refreshMapDaily` |
-| Combat             | `startCombat(enemyKey, onWinAfter, onFleeAfter)`, `combatAttack`, `combatFlee`, `combatWin`, `combatLose`, `showCombatModal` |
-| Player actions     | `playerAction`, `build`, `research`, `assignJob`, `spawnStranger`, `traderArrives`, `tryRelationship`, `birthChild` |
-| Render             | `render` → `renderHeader` / `renderLeft` / `renderRight` / `renderTabs` / `renderContent` (dispatches to tab renderers) |
-| Modal              | `showModal({title, body, buttons})`, `closeModal()`                              |
-| Save / load / init | `save`, `load`, `reset`, `help`, `init` (button + keyboard listeners)             |
+| File | What lives there |
+|------|------------------|
+| `js/data.js` | `RESOURCES`, `ENEMIES`, `KNOWLEDGE`, `BUILDINGS`, `JOBS`, `TRAITS`, `LOCATIONS`, `BIOMES`, `MAP_FEATURES`, `MAP_ENTITIES`, names, constants |
+| `js/state.js` | `G`, `newGame()`, `makeSurvivor()`, starting resources |
+| `js/helpers.js` | `rng`, `pick`, `rint`, `chance`, `clamp`, `addResource`, `pushLog`, tick/day systems, town helpers |
+| `js/actions.js` | Quick actions, contextual action requirements, building, research, jobs, relationships, scouting |
+| `js/world-map.js` | Map generation, visibility, movement, encounters, combat, friendly dialogs, hunting animal movement, daily map refresh |
+| `js/render.js` | DOM renderers, tabs, guide, hint detection, real-time controls |
+| `js/advisor.js` | Advisor/hint helper logic |
+| `js/modal.js` | `showModal({title, body, buttons})`, `closeModal()` |
+| `js/persistence.js` | `save`, `load`, `reset`, save backfills |
+| `js/help.js` | Help modal |
+| `js/main.js` | Button and keyboard listeners, init |
 
 ## `G` (game state) shape
 
@@ -64,6 +74,7 @@ Inside the single `<script>` block in `index.html`, in top-to-bottom order:
   workerAssign: { [buildingId]: [survivorId, ...] },
   knownNodes:   { [knowledgeNodeId]: true },
   relationships:[ {a, b, type:'partner'|'parent'} ],
+  courtship:    { [survivorId]: progress0to100 },
   // world map
   map:        2D array [y][x] of { biome, feature: {type,charges}|null, entity: {type}|null },
   playerX, playerY,
@@ -84,6 +95,8 @@ Module-level non-serialized state: `_combat`, `_autoWalk`, `_activeTab`. Don't p
 - Logging: `pushLog(g, message, type)` where `type ∈ {good, bad, warn, info}`.
 - Colors: use the CSS variables in `:root` (`--bg`, `--accent`, `--good`, `--bad`, `--warn`, `--info`, etc.).
 - New content should fit the existing data schemas so it doesn't need render changes.
+- Quick action buttons are gated by `quickActionBlocker(g, actionKey)` in `js/actions.js`; keep UI disabled states and handler validation in sync by adding new rules there.
+- Survivors have `sex: 'M'|'F'`. Player marriage/courtship is handled in the Survivors tab; natural children require opposite-sex partners. If the player dies, `continueAsHeir()` can transfer play to a living child.
 
 ## Adding content — quick recipes
 
@@ -92,6 +105,7 @@ Module-level non-serialized state: `_combat`, `_autoWalk`, `_activeTab`. Don't p
 - **Job**: add to `JOBS` as `{name, building, output, desc}`. If `building` is set, slots = `BUILDINGS[building].workers * count`.
 - **Map feature**: add to `MAP_FEATURES` as `{icon, name, desc, biomes:[...], charges, loot?, damage?, energyLoss?, curse?, heal?, warmth?, event?, hidden?, rare?, enemyChance?, sting?, chargeRisk?, knowledge?}`. `event` routes to `triggerEvent` — add a case there for new event types.
 - **Map entity (hostile)**: `{icon, name, hostile:true, enemy:<ENEMIES key>, biomes:[...], nightOnly?}`.
+- **Map entity (huntable animal)**: `{icon, name, huntable:true, biomes:[...], loot:{...}, fleeChance?, danger?}`. Huntable animals flee on contact; ranged hunting is handled by the `hunt` quick action.
 - **Map entity (friendly)**: `{icon, name, friendly:"<type>", biomes:[...]}` — and add a matching `case "<type>":` in `openFriendlyDialog`.
 - **Biome**: add to `BIOMES`, and add a blob entry to the `blobs` array inside `generateMap` to make it spawn.
 - **Knowledge node**: append to `KNOWLEDGE` as `{id, name, cat, cost, req:[ids], desc, unlock:{buildings?:[], jobs?:[]}}`.

@@ -41,6 +41,7 @@ const RESOURCES = {
   glass:       {name:"Glass",        icon:"🪟"},
   weapons:     {name:"Weapons",      icon:"🗡"},
   ammo:        {name:"Ammunition",   icon:"📦"},
+  arrows:      {name:"Arrows",       icon:"🏹"},
   books:       {name:"Books",        icon:"📖"},
 };
 
@@ -224,7 +225,7 @@ const BUILDINGS = {
 // ===== WORLD MAP DATA =====
 
 const MAP_W = 180, MAP_H = 120;
-const VIEW_W = 31, VIEW_H = 21;
+const VIEW_W = 33, VIEW_H = 23;
 const VISION_DAY = 6;
 const VISION_NIGHT = 3;
 const STEP_PER_PHASE = 14; // accumulated movement cost per phase tick
@@ -401,6 +402,12 @@ const MAP_ENTITIES = {
   warlord_scout_e:{icon:"🎖", name:"Warlord Scout",   hostile:true, enemy:"warlord_scouts",  biomes:["road","ruins","desert"]},
   scavenger_gang: {icon:"🗡", name:"Scavengers",      hostile:true, enemy:"scavengers",      biomes:["ruins","road","plains"]},
   desperate_npc:  {icon:"😵", name:"Desperate Wanderer",hostile:true, enemy:"desperate",    biomes:["road","plains","ruins"]},
+  // Huntable animals. They avoid direct contact; use arrows to hunt from nearby.
+  rabbit:         {icon:"🐇", name:"Rabbit",          huntable:true, biomes:["plains","forest","hills"], loot:{meat:[1,1], hides:[0,1], bones:[0,1]}, fleeChance:0.85},
+  deer:           {icon:"🦌", name:"Deer",            huntable:true, biomes:["plains","forest","hills"], loot:{meat:[2,4], hides:[1,2], bones:[1,2]}, fleeChance:0.75},
+  boar:           {icon:"🐗", name:"Boar",            huntable:true, biomes:["forest","deep_forest","hills"], loot:{meat:[2,3], hides:[0,1], bones:[1,2]}, fleeChance:0.55, danger:[3,7]},
+  wild_turkey:    {icon:"🦃", name:"Wild Turkey",     huntable:true, biomes:["plains","forest"], loot:{meat:[1,2], bones:[0,1]}, fleeChance:0.8},
+  mountain_goat:  {icon:"🐐", name:"Mountain Goat",   huntable:true, biomes:["mountain","hills"], loot:{meat:[2,3], hides:[1,1], bones:[1,2]}, fleeChance:0.65},
   // Friendly
   lost_child_npc: {icon:"🧒", name:"Lost Child",      friendly:"child",   biomes:["plains","forest","ruins","road"]},
   wounded_npc:    {icon:"🤕", name:"Wounded Survivor",friendly:"wounded", biomes:["road","ruins","forest","plains"]},
@@ -422,19 +429,30 @@ const MAP_ENTITIES = {
 const JOBS = {
   none:          {name:"Idle",           building:null,           output:{}, desc:"No assignment."},
   woodcutter:    {name:"Woodcutter",     building:null,           output:{wood:3}, desc:"Cuts wood from nearby trees."},
+  lumber_picker: {name:"Lumber Picker",  building:null,           output:{wood:1}, desc:"Collects loose wood safely near camp."},
+  charcoal_burner:{name:"Charcoal Burner",building:null,           output:{charcoal:1}, consume:{wood:2}, desc:"Burns 2 wood into 1 charcoal per day without a kiln."},
   gatherer:      {name:"Gatherer",       building:null,           output:{herbs:1, seeds:1, food:1}, desc:"Forages for herbs and seeds."},
+  trapper:       {name:"Trapper",        building:null,           output:{meat:0.5, hides:0.5, bones:0.5}, desc:"Sets small snares near camp."},
   water_carrier: {name:"Water Carrier",  building:null,           output:{dirty_water:4}, desc:"Brings dirty water from the river."},
+  camp_cook:     {name:"Camp Cook",      building:null,           output:{food:0.5, happiness_all:0.15}, desc:"Stretches meals and keeps spirits up."},
+  chronicler:    {name:"Chronicler",     building:null,           output:{knowledge:0.25}, desc:"Records lessons learned each day."},
+  mediator:      {name:"Mediator",       building:null,           output:{morale_all:0.15}, desc:"Settles arguments before they sour morale."},
+  runner:        {name:"Runner",         building:null,           output:{reputation:0.03}, desc:"Carries messages and rumors between camps."},
   hunter:        {name:"Hunter",         building:"hunting_lodge",output:{meat:2, hides:1, bones:1}, desc:"Hunts game."},
   scavenger:     {name:"Scavenger",      building:null,           output:{metal:1, cloth:1, parts:0.5}, desc:"Scavenges nearby ruins (chance of injury)."},
+  junk_picker:   {name:"Junk Picker",    building:null,           output:{metal:0.5, cloth:0.5, glass:0.25}, desc:"Searches safer scrap piles for basics."},
   guard:         {name:"Guard",          building:"guard_post",   output:{}, desc:"Defends the settlement."},
   watchman:      {name:"Watchman",       building:"watchtower",   output:{}, desc:"Watches for threats."},
+  drill_sergeant:{name:"Drill Sergeant", building:"barracks",     output:{}, desc:"Keeps fighters organized and ready."},
   farmer:        {name:"Farmer",         building:"crop_field",   output:{crops:3}, desc:"Tends the crops."},
   gardener:      {name:"Gardener",       building:"garden",       output:{crops:1}, desc:"Tends the garden."},
+  seed_saver:    {name:"Seed Saver",     building:"garden",       output:{seeds:0.5}, desc:"Protects and sorts viable seeds."},
   greenhouse:    {name:"Greenhouse Worker",building:"greenhouse", output:{crops:5}, desc:"Year-round crops."},
   rancher:       {name:"Rancher",        building:"animal_stable",output:{food:1, hides:0.5}, desc:"Tends animals."},
   chickenkeeper: {name:"Chickenkeeper",  building:"chicken_coop", output:{food:3}, desc:"Manages chickens."},
   goatkeeper:    {name:"Goatkeeper",     building:"goat_pen",     output:{food:2, hides:0.5}, desc:"Manages goats."},
   toolmaker:     {name:"Toolmaker",      building:"toolsmith",    output:{tools:1, nails:2}, desc:"Makes tools."},
+  workshop_tinker:{name:"Workshop Tinker",building:"workshop",    output:{tools:0.3, nails:1}, desc:"Turns scrap into useful bits."},
   carpenter:     {name:"Carpenter",      building:"carpenter",    output:{planks:1}, desc:"Cuts planks."},
   sawyer:        {name:"Sawyer",         building:"sawmill",      output:{planks:2}, desc:"Operates the sawmill."},
   smith:         {name:"Smith",          building:"forge",        output:{iron:1}, desc:"Smelts iron."},
@@ -449,19 +467,26 @@ const JOBS = {
   alchemist:     {name:"Alchemist",      building:"medicine_workshop",output:{medicine:2}, desc:"Brews medicine."},
   herbalist:     {name:"Herbalist",      building:"herbalist",    output:{medicine:1}, desc:"Brews simple medicine."},
   healer:        {name:"Healer",         building:"clinic",       output:{}, desc:"Treats the sick & wounded."},
+  nurse:         {name:"Nurse",          building:"clinic",       output:{}, desc:"Tends recovery beds and infections."},
   teacher:       {name:"Teacher",        building:"school",       output:{}, desc:"Teaches children."},
+  tutor:         {name:"Tutor",          building:"school",       output:{knowledge:0.5}, desc:"Turns lessons into practical knowledge."},
   scholar:       {name:"Scholar",        building:"library",      output:{}, desc:"Generates knowledge."},
+  archivist:     {name:"Archivist",      building:"library",      output:{knowledge:1}, desc:"Preserves books and extracts useful ideas."},
   builder:       {name:"Builder",        building:null,           output:{}, desc:"Slowly repairs buildings."},
   wallbuilder:   {name:"Wall Builder",   building:null,           output:{}, desc:"Maintains walls."},
   innkeeper:     {name:"Innkeeper",      building:"inn",          output:{}, desc:"Cheers up everyone."},
   barkeep:       {name:"Barkeep",        building:"tavern",       output:{}, desc:"Cheers up everyone (uses alcohol)."},
   trader:        {name:"Trader",         building:"trading_post", output:{}, desc:"Negotiates trade."},
   shopkeeper:    {name:"Shopkeeper",     building:"market_stall", output:{}, desc:"Runs a market stall."},
+  barterer:      {name:"Barterer",       building:"market_stall", output:{reputation:0.05}, desc:"Builds trust through small trades."},
   storekeeper:   {name:"Storekeeper",    building:"warehouse",    output:{}, desc:"Manages stored goods."},
+  quartermaster: {name:"Quartermaster",  building:"storage_shed", output:{}, desc:"Keeps supplies counted and accessible."},
   signaller:     {name:"Signaller",      building:"signal_tower", output:{}, desc:"Sends and reads signals."},
   scout:         {name:"Scout",          building:"scout_camp",   output:{}, desc:"Scouts the wastes."},
+  pathfinder:    {name:"Pathfinder",     building:"scout_camp",   output:{knowledge:0.35}, desc:"Maps safe paths and landmarks."},
   bathhouse_keeper:{name:"Bathhouse Keeper",building:"bathhouse", output:{}, desc:"Runs the baths."},
   water_worker:  {name:"Water Worker",   building:"water_collector",output:{dirty_water:3}, desc:"Operates water collector."},
+  rain_tender:   {name:"Rain Tender",    building:"rain_barrel",  output:{dirty_water:0.5}, desc:"Maintains barrels and catches runoff."},
   well_worker:   {name:"Well Worker",    building:"well",         output:{water:3}, desc:"Draws clean water."},
   purifier_op:   {name:"Purifier Op",    building:"purifier",     output:{water:3}, desc:"Operates the purifier."},
   armorer:       {name:"Armorer",        building:"armory",       output:{weapons:1, ammo:1}, desc:"Produces arms."},
@@ -504,7 +529,7 @@ const BASE_RES_CAP = 80;     // base storage cap
 const SAVE_KEY = "post_2045_save_v1";
 const LEGACY_SAVE_KEYS = [String.fromCharCode(97,115,104,101,115,95,111,102,95,116,111,109,111,114,114,111,119,95,115,97,118,101,95,118,49)];
 const STARTER_BUILDINGS = new Set(["campfire", "tent", "storage_shed", "rain_barrel", "garden", "guard_post"]);
-const STARTING_RESOURCES = {wood:40, food:5, water:4, cloth:8, nails:6, seeds:3, weapons:1, herbs:1};
+const STARTING_RESOURCES = {wood:40, food:5, water:4, cloth:8, nails:6, seeds:3, weapons:1, arrows:4, herbs:1};
 const BUILDING_CAP_MULTIPLIER = 3;
 
 for (const id in BUILDINGS){

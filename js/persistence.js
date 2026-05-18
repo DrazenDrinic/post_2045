@@ -44,6 +44,8 @@ function normalizeGame(g){
   if (g.reputation==null) g.reputation = 0;
   if (g.danger==null) g.danger = 0;
   if (!g.playerName) g.playerName = g.survivors?.[0]?.name || "You";
+  if (!g.playerSex) g.playerSex = g.survivors?.[0]?.sex || "M";
+  if (!g.courtship || typeof g.courtship !== "object" || Array.isArray(g.courtship)) g.courtship = {};
   if (!g.resources) g.resources = {};
   for (const k of RES_KEYS) if (g.resources[k]==null || !isFinite(g.resources[k])) g.resources[k] = 0;
   if (!g.buildings) g.buildings = {campfire:{count:1,dmg:0}};
@@ -63,6 +65,8 @@ function normalizeGame(g){
   if (!Array.isArray(g.relationships)) g.relationships = [];
   if (!Array.isArray(g.followers)) g.followers = [];
   if (g.stepAccum==null) g.stepAccum = 0;
+  if (g.phaseMinutes==null) g.phaseMinutes = 0;
+  g.phaseMinutes = clamp(g.phaseMinutes, 0, 359);
   if (!g.explored) g.explored = {};
   normalizeTown(g);
   if (!g.nextSurvId || g.nextSurvId < 1) g.nextSurvId = 1;
@@ -72,6 +76,7 @@ function normalizeGame(g){
     g.survivors[0].firstName = g.playerName;
     g.survivors[0].lastName = "";
     g.survivors[0].name = g.playerName;
+    g.survivors[0].sex = g.playerSex === "F" ? "F" : "M";
   }
   const aliveIds = new Set(g.survivors.map(s=>s.id));
   for (const id of Object.keys(g.jobs)){
@@ -134,6 +139,7 @@ function normalizeSurvivor(g, s){
   s.happiness = clamp(s.happiness, 0, 100); s.morale = clamp(s.morale, 0, 100); s.warmth = clamp(s.warmth, 0, 100); s.safety = clamp(s.safety, 0, 100);
   if (!Array.isArray(s.traits)) s.traits = [];
   s.traits = s.traits.filter(t=>TRAITS[t]);
+  if (s.sex !== "F" && s.sex !== "M") s.sex = rng()<0.5 ? "M" : "F";
   if (!s.skills) s.skills = {};
   for (const k of ["combat","building","farming","medicine","crafting","hunting"]) if (s.skills[k]==null) s.skills[k] = 0;
   if (s.age==null) s.age = s.isChild ? 8 : 28;

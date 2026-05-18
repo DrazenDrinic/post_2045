@@ -82,8 +82,11 @@ function canPay(g, cost){
 function pay(g, cost){
   for (const k in cost){ g.resources[k] -= cost[k]; }
 }
-function costString(cost){
-  return Object.entries(cost).map(([k,v])=>`${RESOURCES[k]?.icon||""}${v} ${RESOURCES[k]?.name||k}`).join(", ");
+function costString(cost, g=null){
+  return Object.entries(cost).map(([k,v])=>{
+    const text = `${RESOURCES[k]?.icon||""}${v} ${RESOURCES[k]?.name||k}`;
+    return g && (g.resources[k]||0) < v ? `<span class="bad">${text}</span>` : text;
+  }).join(", ");
 }
 
 function getHousing(g){
