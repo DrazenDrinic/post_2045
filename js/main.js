@@ -17,7 +17,7 @@ function init(){
   document.getElementById("btn-rt").onclick = toggleRealtime;
   document.getElementById("btn-speed").onclick = cycleRealtimeSpeed;
   document.getElementById("btn-save").onclick = ()=> { save(); pushLog(G,"Game saved.","info"); render(); };
-  document.getElementById("btn-load").onclick = ()=> { if (load()) { pushLog(G,"Game loaded.","info"); render(); } };
+  document.getElementById("btn-load").onclick = ()=> { if (load()) { cancelAutoWalk(); _combat=null; _buildToPlace=null; _activityEpoch++; closeModal(); pushLog(G,"Game loaded.","info"); render(); } };
   document.getElementById("btn-reset").onclick = reset;
   document.getElementById("btn-help").onclick = help;
 

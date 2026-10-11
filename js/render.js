@@ -35,6 +35,8 @@ function renderHeader(){
   const sp = document.getElementById("btn-speed");
   if (rt) rt.textContent = _rtSpeed ? "Live" : "Paused";
   if (sp) sp.textContent = (_rtSpeed || 1) + "x";
+  const weather=document.getElementById("hud-weather");
+  if(weather) weather.textContent=g.weather.type;
 }
 
 function renderLeft(){
@@ -59,36 +61,29 @@ function renderLeft(){
     ${p.diseased? '<div class="bad" style="margin-top:4px">🤒 Diseased</div>' : ""}
     ${p.injured? '<div class="warn" style="margin-top:4px">🩹 Injured</div>' : ""}`;
   root.appendChild(ch);
+  const expedition=el("div","card",`<h3>Expedition</h3><div class="${packWeight(g)>packCapacity(g)*0.9?"warn":"info"}">Pack: ${fmt(packWeight(g))} / ${packCapacity(g)} load</div><div>${atSettlement(g)?"Town supplies accessible":"Using carried supplies"}</div><div class="muted">${compassLabel(g)}</div><div>${sleepConditions(g).label}</div>`);
+  const inventoryButton=el("button","small","Open inventory"); inventoryButton.onclick=()=>{_activeTab="inventory";render();}; expedition.appendChild(inventoryButton);
+  root.appendChild(expedition);
 
   // Quick actions
   const qa = el("div","card");
   qa.innerHTML = `<h3>Quick Actions</h3>`;
-  const grid = el("div","actgrp");
-  const actions = [
-    ["eat","🍞 Eat","Restore hunger"],
-    ["drink","💧 Drink","Restore thirst"],
-    ["rest","💤 Rest","2h → +25% energy"],
-    ["chop_wood","🪓 Chop Wood","+wood (1 phase)"],
-    ["gather","🌿 Forage","+food, herbs, seeds (1 phase)"],
-    ["fetch_water","🪣 Fetch Water","1h → +1 water"],
-    ["boil_water","🔥 Boil Water","2 dirty + 1 wood → 2 water"],
-    ["purify_water","⬛ Purify Water","2 dirty + 1 charcoal → 2 water"],
-    ["cook","🍳 Cook","meat or crops + wood → food"],
-    ["warm_fire","🔥 Warm Up","wood/charcoal → warmth"],
-    ["gather_spirits","🕯 Gather Spirits","boost happiness and morale"],
-    ["craft_arrows","🏹 Craft Arrows","wood + bones → arrows"],
-    ["hunt","🏹 Hunt","shoot visible animals"],
-    ["study","📚 Study","1 book → knowledge"],
-    ["train","🥋 Train","training yard → combat"],
+  const groups = [
+    ["Survival",[["eat","Eat","1 food / +30 hunger"],["drink","Drink","1 water / +30 thirst"],["rest","Rest","+7 energy up to 60; exposure applies"],["bandage","Bandage","1 bandage / +15 health"],["warm_fire","Warm up","Nearby fire / +30 warmth"]]],
+    ["Gather and explore",[["chop_wood","Chop wood","3-5 wood; axes improve yield"],["gather","Forage","Food, herbs and seeds"],["fetch_water","Fetch water","2 water; containers increase batch"],["gather_fiber","Gather fiber","3-5 fiber"],["gather_stone","Gather stone","2-3 stone"],["mine","Mine","Nearby deposit + pickaxe"],["dig","Dig","3 sand + 2 clay"],["fish","Fish","1-3 meat"],["hunt","Hunt","Bow + 1 arrow"],["survey","Survey","Binoculars reveal terrain"]]],
+    ["Camp and craft",[["cook","Cook","Meat or 2 crops + wood / 3 food"],["boil_water","Boil water","2 dirty water + wood / 2 water"],["purify_water","Filter water","2 dirty water + charcoal / 2 water"],["craft_arrows","Craft arrows","Wood + bone / 5 arrows"],["pitch_tent","Pitch tent","Deploy carried tent"],["lay_bag","Lay sleeping bag","Deploy carried sleeping bag"],["lean_to","Build lean-to","4 wood + 4 fiber"],["light_fire","Fuel field fire","1 wood / 4h fuel"],["pack_camp","Pack camp","Recover gear and extinguish fire"],["gather_spirits","Share stories","+5 happiness"],["study","Study","1 book / 2-5 knowledge"],["train","Train","Training yard / +0.5 combat"]]],
   ];
-  for (const [k,label,sub] of actions){
-    const b = el("button","",`${label}<span class="sub">${sub}</span>`);
-    b.onclick = ()=> playerAction(k);
-    const blocker = quickActionBlocker(g, k);
-    if (blocker){ b.disabled = true; b.title = blocker; }
-    grid.appendChild(b);
+  const search=el("button","small","Search nearby"); search.onclick=searchNearby; qa.appendChild(search);
+  for(const [name,actions] of groups){
+    const group=el("details","quick-group"); group.open=name==="Survival" || _openQuickGroups.has(name);
+    group.ontoggle=()=>{if(group.open) _openQuickGroups.add(name); else _openQuickGroups.delete(name);};
+    group.appendChild(el("summary","",name)); const grid=el("div","actgrp");
+    for(const [k,label,sub] of actions){
+      const blocker=quickActionBlocker(g,k), b=el("button","",`${label}<span class="sub">${timeText(actionMinutes(g,k))} · ${ACTION_ENERGY[k] || 0} energy · ${sub}</span>${blocker?`<span class="sub warn">${blocker}</span>`:""}`);
+      b.disabled=!!blocker; b.title=blocker; b.onclick=()=>playerAction(k); grid.appendChild(b);
+    }
+    group.appendChild(grid); qa.appendChild(group);
   }
-  qa.appendChild(grid);
   root.appendChild(qa);
 
   // Settlement summary
@@ -115,7 +110,7 @@ function renderRight(){
   root.innerHTML = "";
   // Resources
   const rc = el("div","card");
-  rc.innerHTML = `<h3>📦 Resources</h3>`;
+  rc.innerHTML = `<h3>Town Stockpile</h3><div class="muted">${atSettlement(g)?"Accessible here":"Stored at home; pack supplies before leaving"}</div>`;
   const list = el("div","reslist");
   const cap = totalStorageCap(g);
   const fcap = foodStorageCap(g);
@@ -131,7 +126,7 @@ function renderRight(){
   root.appendChild(rc);
 
   const dc = el("div","card");
-  dc.innerHTML = `<h3>📈 Daily Outlook</h3>`;
+  dc.innerHTML = `<h3>📈 Daily Outlook</h3><div class="muted">Estimated rates; inputs, storage, crop growth and reserves can limit output.</div>`;
   const delta = estimateDailyDelta(g);
   const rows = ["food","water","dirty_water","wood","crops","meat","metal","cloth","tools","knowledge"];
   const dl = el("div","reslist outlook-list");
@@ -162,13 +157,32 @@ function estimateDailyDelta(g){
   for (const id in g.buildings){
     const b = BUILDINGS[id]; if (!b) continue;
     const count = g.buildings[id].count;
-    const assigned = g.workerAssign[id] || [];
+    const assigned = productionWorkers(g,id).filter(sid=>!JOBS[g.jobs[sid]]?.direct);
     const eff = b.effects || {};
+    if(!count || eff.farm) continue;
+    const order=g.orders[id];
+    if(order){
+      if(!orderBlocker(g,id,order)){
+        const recipe=RECIPES[order.recipe];
+        let runs=240*assigned.length*workerSkillBonus(g,id,assigned)/recipe.minutes;
+        for(const [r,v] of Object.entries(recipe.cost)) runs=Math.min(runs,Math.max(0,(g.resources[r]||0)-(g.reserves[r]||0))/v);
+        if(order.mode==="count") runs=Math.min(runs,order.target);
+        else runs=Math.min(runs,Math.ceil(Math.max(0,order.target-orderStock(g,order.recipe))/(recipe.item?1:Math.min(...Object.values(recipe.output)))));
+        for(const [r,v] of Object.entries(recipe.output || {})) runs=Math.min(runs,Math.floor(Math.max(0,resourceCap(g,r)-(g.resources[r]||0))/v));
+        runs=Math.floor(runs);
+        for(const [r,v] of Object.entries(recipe.cost)) add(r,-v*runs);
+        for(const [r,v] of Object.entries(recipe.output || {})) add(r,v*runs);
+      }
+      continue;
+    }
+    if(eff.consume && (!assigned.length && b.workers || !Object.entries(eff.consume).every(([r,v])=>productionStock(g,r)>=v*count/4))) continue;
     if (eff.produce) for (const r in eff.produce) add(r, eff.produce[r] * count);
     if (eff.produce_per_worker) for (const r in eff.produce_per_worker) add(r, eff.produce_per_worker[r] * assigned.length * workerSkillBonus(g, id, assigned));
     if (eff.consume) for (const r in eff.consume) add(r, -eff.consume[r] * count);
     if (eff.convert && assigned.length){
-      const runs = (eff.convert.perWorker || 1) * assigned.length;
+      let runs = (eff.convert.perWorker || 1) * assigned.length * workerSkillBonus(g,id,assigned);
+      for(const [r,v] of Object.entries(eff.convert.from)) runs=Math.min(runs,productionStock(g,r)/v);
+      for(const [r,v] of Object.entries(eff.convert.to)) runs=Math.min(runs,Math.max(0,resourceCap(g,r)-(g.resources[r]||0))/v);
       for (const r in eff.convert.from) add(r, -eff.convert.from[r] * runs);
       for (const r in eff.convert.to) add(r, eff.convert.to[r] * runs);
     }
@@ -179,12 +193,19 @@ function estimateDailyDelta(g){
     if (!s || s.isPlayer || s.isChild || s.health<=0) continue;
     const jobKey = g.jobs[s.id] || s.job || "none";
     const job = JOBS[jobKey];
-    if (!job || job.building) continue;
+    if (!job || job.building && !job.direct) continue;
+    if(job.building && (!productionWorkers(g,job.building).includes(s.id) || g.orders[job.building])) continue;
+    if(job.site && !Object.values(g.workSites).some(v=>v.kind===job.site && v.remaining>0)) continue;
+    if(!Object.entries(job.consume || {}).every(([r,v])=>productionStock(g,r)>=v/4)) continue;
     const boost = workerJobBonus(s, jobKey);
-    for (const r in job.output || {}) add(r, job.output[r] * boost);
+    let fraction=1;
+    for(const [r,v] of Object.entries(job.consume || {})) fraction=Math.min(fraction,productionStock(g,r)/v);
+    for(const [r,v] of Object.entries(job.output || {})) if(RESOURCES[r]) fraction=Math.min(fraction,Math.max(0,resourceCap(g,r)-(g.resources[r]||0))/(v*boost));
+    for (const r in job.output || {}) add(r, job.output[r] * boost * fraction);
+    for (const r in job.consume || {}) add(r,-job.consume[r]*fraction);
   }
-  const adultsCount = adults(g).filter(s=>s.health>0).length;
-  const childCount = children(g).filter(s=>s.health>0).length;
+  const adultsCount = adults(g).filter(s=>s.health>0 && (!s.isPlayer || atSettlement(g))).length;
+  const childCount = children(g).filter(s=>s.health>0 && (!s.isPlayer || atSettlement(g))).length;
   add("food", -(adultsCount * 0.65 + childCount * 0.35));
   add("water", -(adultsCount * 0.8 + childCount * 0.45));
   if (g.buildings.campfire?.count) add("wood", -1);
@@ -195,6 +216,9 @@ function estimateDailyDelta(g){
 const TABS = [
   {id:"map", label:"🗺 World Map"},
   {id:"town", label:"🏘 Town"},
+  {id:"inventory",label:"Inventory"},
+  {id:"crafting",label:"Crafting"},
+  {id:"farms",label:"Farming"},
   {id:"build", label:"🏗 Build"},
   {id:"survivors", label:"👥 Survivors"},
   {id:"jobs", label:"🛠 Jobs"},
@@ -207,6 +231,8 @@ let _activeTab = "town";
 let _buildToPlace = null;
 let _rtSpeed = 0;
 let _rtTimer = null;
+const _openQuickGroups = new Set();
+let _craftFilter = "all";
 
 function mapPhaseLabel(phase){
   return ["☀ Morning", "☀ Midday", "🌇 Evening", "🌙 Midnight"][phase] || PHASES[phase] || "Unknown";
@@ -231,6 +257,9 @@ function renderContent(){
   root.innerHTML = "";
   switch(_activeTab){
     case "map": return renderMapTab(root);
+    case "inventory": return renderInventoryTab(root);
+    case "crafting": return renderCraftingTab(root);
+    case "farms": return renderFarmsTab(root);
     case "town": return renderTownTab(root);
     case "scout": return renderExploreTab(root);
     case "build": return renderBuildTab(root);
@@ -251,13 +280,21 @@ function renderMapTab(root){
   const p = g.survivors[0];
   ctrls.innerHTML = _buildToPlace ? `<span><b>Build mode:</b> click clear ground near the campfire to place <b>${BUILDINGS[_buildToPlace].icon} ${BUILDINGS[_buildToPlace].name}</b></span>
     <span class="legend">Buildings and walls are placed on the map around your settlement.</span>` : `<span><b>Move:</b> WASD / Arrows · <b>Click</b> a tile to walk · Walk into entities to interact</span>
-    <span class="legend">·  Energy: ${Math.round(p.energy)}/100  ·  Phase: ${PHASES[g.phase]}  ·  Vision: ${(g.phase===3?VISION_NIGHT:VISION_DAY)} tiles</span>`;
+    <span class="legend">· Energy: ${Math.round(p.energy)}/100 · Vision: ${visionRadius(g)} tiles · ${compassLabel(g)}</span>`;
   if (_buildToPlace){
     const cancel = el("button", "small", "Cancel build");
     cancel.onclick = ()=>{ _buildToPlace = null; render(); };
     ctrls.appendChild(cancel);
   }
   wrap.appendChild(ctrls);
+  const mapTools=el("div","row");
+  appendButton(mapTools,"Search nearby",searchNearby);
+  appendButton(mapTools,"Camp / sleep",openSleepDialog);
+  appendButton(mapTools,"Route home",()=>previewRoute(g.villageX,g.villageY));
+  appendButton(mapTools,"Mark this location",()=>{g.markers[positionKey(g)] = MAP_FEATURES[g.map[g.playerY][g.playerX].feature?.type]?.name || "Waypoint"; render();save();});
+  appendButton(mapTools,"Supply outpost (6 wood + rope)",establishOutpost,atSettlement(g));
+  const stop=el("label","muted"),check=el("input");check.type="checkbox";check.checked=g.stopAtNight;check.onchange=()=>{g.stopAtNight=check.checked;save();};stop.appendChild(check);stop.appendChild(document.createTextNode(" Stop walking at nightfall"));mapTools.appendChild(stop);
+  wrap.appendChild(mapTools);
 
   // Followers strip
   if (g.followers.length>0){
@@ -318,7 +355,7 @@ function renderMapTab(root){
             const ent = MAP_ENTITIES[tile.entity.type];
             if (ent){
               // Night stalkers only visible at night
-              if (!ent.nightOnly || g.phase===3){
+              if (!ent.nightOnly || isNight(g)){
                 const en = document.createElement("span"); en.className = "ent"; en.textContent = ent.icon;
                 cell.title = `${ent.name}${ent.hostile?" (hostile)":""}`;
                 cell.appendChild(en);
@@ -331,6 +368,10 @@ function renderMapTab(root){
         }
       }
 
+      if(isExplored && (g.camps[x+","+y] || g.caches[x+","+y] || g.markers[x+","+y])){
+        const mark=el("span","map-marker",g.camps[x+","+y]?"C":g.caches[x+","+y]?"$":"+");
+        cell.appendChild(mark); cell.title+=" · "+(g.markers[x+","+y] || (g.camps[x+","+y]?"Camp":"Ground cache"));
+      }
       // Village marker
       if (x===g.villageX && y===g.villageY){
         cell.classList.add("village-tile");
@@ -358,7 +399,7 @@ function renderMapTab(root){
           build(_buildToPlace, x, y);
           return;
         }
-        if (x===g.playerX && y===g.playerY) return;
+        if (x===g.playerX && y===g.playerY){openTileActionDialog(g,x,y);return;}
         if (!isExplored) return;
         startAutoWalk(x,y);
       };
@@ -399,7 +440,7 @@ function renderMapTab(root){
     }
     if (t.entity){
       const e = MAP_ENTITIES[t.entity.type];
-      if (e && (!e.nightOnly || g.phase===3)) nearby.push(`${e.icon} ${e.name}${e.hostile?" ⚠":""}`);
+      if (e && (!e.nightOnly || isNight(g))) nearby.push(`${e.icon} ${e.name}${e.hostile?" ⚠":""}`);
     }
   }
   info_html += nearby.length ? `<div>${nearby.join(" · ")}</div>` : `<div class="dim">Nothing of note.</div>`;
@@ -424,11 +465,11 @@ function renderExploreTab(root){
     const item = el("div","item");
     item.innerHTML = `<div class="head"><span class="name">${l.icon} ${l.name}</span> <span class="danger-level">Danger ${l.danger}</span></div>
       <div class="desc">Loot: ${Object.entries(l.loot).map(([r,ab])=>`${RESOURCES[r].icon}${ab[0]}-${ab[1]} ${RESOURCES[r].name}`).join(", ")}</div>
-      <div class="desc">Time: ${l.time} phases · Energy: ${l.energy}</div>
+       <div class="desc">Time: ${timeText(l.minutes)} · Energy: ${l.energy} · Pack 1 food + 1 water · 12h route cooldown</div>
       <div class="desc">Possible foes: ${l.foundEnemies.map(e=>ENEMIES[e].name).join(", ")}</div>`;
     const btn = el("button","primary small","Explore");
     btn.onclick = ()=> explore(k);
-    if (g.survivors[0].energy < l.energy) btn.disabled = true;
+    if (g.survivors[0].energy < l.energy || !atSettlement(g) || (g.scoutCooldowns[k]||0)>gameMinutes(g) || (g.inventory.resources.food||0)<1 || (g.inventory.resources.water||0)<1) {btn.disabled = true;btn.title="Return home, pack food/water, and choose a rested route.";}
     item.appendChild(btn);
     grid.appendChild(item);
   }
@@ -550,7 +591,7 @@ function renderTownTab(root){
         cell.title = _buildToPlace ? `Place ${BUILDINGS[_buildToPlace].name}` : "Empty plot";
         cell.onclick = ()=>{
           if (!_buildToPlace){ pushLog(G,"Select a building from the Build tab first.","info"); render(); return; }
-          build(_buildToPlace, x, y);
+           build(_buildToPlace, g.villageX+x-cx, g.villageY+y-cy);
         };
       }
       grid.appendChild(cell);
@@ -594,9 +635,11 @@ function renderBuildTab(root){
         <div class="desc">${b.desc}</div>
         <div class="effect">${buildingYieldText(b)}</div>
         <div class="cost">Cost: ${costString(b.cost, g) || "Free"}</div>
+        <div class="meta">Build time: ${timeText(buildingMinutes(g,id))}</div>
         ${b.workers?`<div class="effect">Workers: ${b.workers}</div>`:""}`;
       const btn = el("button","primary small", _buildToPlace===id ? "Selected for map placement" : "Place on Map");
-      btn.disabled = !unlocked || !canPay(g,b.cost) || built>=b.max;
+      btn.disabled = !unlocked || !canPay(g,b.cost) || built>=b.max || !atSettlement(g);
+      if(!atSettlement(g)) btn.title="Return to the settlement to build.";
       btn.onclick = ()=> build(id);
       item.appendChild(btn);
       if (!unlocked){
@@ -664,6 +707,14 @@ function renderSurvivorsTab(root){
 }
 
 function jobOutputText(job){
+  if(job.building && !job.direct){
+    const b=BUILDINGS[job.building];
+    if(b.effects.farm) return "Tends one plot: waters, harvests and replants using town supplies.";
+    if(b.effects.convert){
+      const c=b.effects.convert,n=c.perWorker || 1;
+      return Object.entries(c.from).map(([k,v])=>`${fmt(v*n)} ${RESOURCES[k].name}`).join(" + ")+" -> "+Object.entries(c.to).map(([k,v])=>`${fmt(v*n)} ${RESOURCES[k].name}/day`).join(", ")+"; work orders override this.";
+    }
+  }
   const parts = [];
   for (const r in job.output || {}){
     const v = job.output[r];
@@ -726,6 +777,7 @@ function renderJobsTab(root){
     wc.appendChild(item);
   }
   root.appendChild(wc);
+  renderProductionOrders(root);
 }
 
 function renderKnowledgeTab(root){
@@ -782,6 +834,7 @@ function describeEffects(b){
   const eff = b.effects || {};
   const parts = [];
   if (eff.housing) parts.push("+"+eff.housing+" housing");
+  if (eff.farm) parts.push("Plant, water, grow, harvest; farmers automate tending");
   if (eff.storage) parts.push("+"+eff.storage+" storage");
   if (eff.food_storage) parts.push("+"+eff.food_storage+" food storage");
   if (eff.warmth) parts.push("warmth");
@@ -838,7 +891,7 @@ function renderGuideTab(root){
         <li><b>Click a tile</b> on the World Map to auto-walk to it.</li>
         <li><kbd>Space</kbd> cancels auto-walk.</li>
         <li><b>Live / Paused</b> in the header toggles real-time ticking. The speed button cycles 1x / 2x / 3x.</li>
-        <li><b>Sleep</b> button (top-right) sleeps 8 hours and restores full energy.</li>
+        <li><b>Sleep</b> previews exposure, supplies and shelter; choose 2, 4 or 8 hours. Outdoors can be lethal.</li>
         <li><b>Save / Load / Reset</b> are in the header. Game also autosaves after every action.</li>
         <li>Tabs switch between map, build, survivors, jobs, knowledge, buildings, scout, and this guide.</li>
       </ul>
@@ -866,34 +919,40 @@ function renderGuideTab(root){
       <ul>
         <li><b>🍞 Eat</b> — instant, uses 1 food, +30 hunger.</li>
         <li><b>💧 Drink</b> — instant, uses water or risky dirty water.</li>
-        <li><b>💤 Rest</b> — short 2-hour rest near housing, shelter, or campfire, +25 energy.</li>
-        <li><b>🪓 Chop Wood</b> — +3–6 wood near forest, deep forest, or wood features (1 phase).</li>
-        <li><b>🌿 Forage</b> — +food, herbs, seeds near forageable terrain or plants (1 phase).</li>
-        <li><b>🪣 Fetch Water</b> — water source must be on your tile or one tile away; takes 1 hour and gives 1 water or dirty water.</li>
+        <li><b>Rest</b> — 30 minutes, +7 energy up to 60 before phase decay; exposure and encounters still apply. Sleep is needed for full recovery.</li>
+        <li><b>Chop Wood</b> — 30 minutes, 3–5 wood; axes improve speed and yield.</li>
+        <li><b>Forage</b> — food, herbs and seeds in 20 minutes.</li>
+        <li><b>Fetch Water</b> — stand next to water; 10 minutes for 2 water, 3 with a canteen, 5 with a bucket.</li>
         <li><b>🔥 Boil Water</b> — 2 dirty + 1 wood → 2 clean water at a nearby fire.</li>
         <li><b>⬛ Purify Water</b> — 2 dirty + 1 charcoal → 2 clean water.</li>
         <li><b>🍳 Cook</b> — 1 meat or 2 crops + 1 wood → 3 food.</li>
-        <li><b>🔥 Warm Up</b> — use wood or charcoal at a fire for warmth, a little energy, and happiness.</li>
-        <li><b>🕯 Gather Spirits</b> — spend time to raise happiness and morale for the group.</li>
-        <li><b>🏹 Craft Arrows</b> — 1 wood + 1 bone → 3–5 arrows.</li>
-        <li><b>🏹 Hunt</b> — spend 1 arrow to shoot a visible animal 1–3 tiles away.</li>
+        <li><b>Warm Up</b> — 15 minutes at a fueled fire restores 30 warmth.</li>
+        <li><b>Share stories</b> — 30 minutes to raise the nearby group's happiness.</li>
+        <li><b>Craft Arrows</b> — 1 wood + 1 bone makes 5 arrows in 15 minutes.</li>
+        <li><b>Hunt</b> — carry a bow and spend an arrow to shoot a visible animal 1–3 tiles away.</li>
       </ul>
-      <p>Also via the header: <b>Sleep</b> takes 8 hours and restores full energy. <b>Train</b> and <b>Study</b> are available if you have the right resources/buildings.</p>
+      <p>Expand the action groups for mining, fishing, camp setup and repairs. <b>Train</b> and <b>Study</b> take one hour each.</p>
+      <h4>Inventory, crafting and camping</h4>
+      <p>Your backpack starts with 30 load capacity. Equip backpacks for 45 or 65. Town materials are accessible inside the settlement footprint; outside it, you use only what you carry. Packing presets take consumables from storage. Take tools and shelter separately. Excess loot remains in a cache on the tile.</p>
+      <p>Build a <b>Crafting Table</b> for bows, tents and equipment. Stone tools and sleeping bags can be crafted by hand. The Crafting tab lists exact recipes and station requirements. Tools wear down and can be repaired with repair kits. Torches and lanterns need fuel. A carried compass points home.</p>
+      <p>Deploy your sleeping bag and portable tent before sleeping. One wood gives a field fire four hours of fuel. Rain, cold, nearby hostiles and radiation matter: check the sleep preview. A lean-to costs 4 wood and 4 fiber. Pack your camp before moving on.</p>
+      <h4>Farming and production</h4>
+      <p>Build a Garden and plant seeds in Farming. Water, compost and harvest by hand, or assign a farmer to tend each plot. Crops take 2–4 base days and return seeds. Fence crops against wildlife and install irrigation to draw stored water automatically. Seed Savers produce seeds instead of tending plots. In Jobs, set workplace production orders for fixed batches or stock targets; required resources are actually consumed. Claim mines and fishing sites from nearby tile dialogs. Haulers retrieve caches from supply outposts.</p>
     </div>
 
     <div class="guide-section" id="g-map">
       <h3>🗺 World Map</h3>
-      <p>The map is a 60×36 grid of biomes. Your viewport follows you. Tiles you've seen are remembered (fog); unseen tiles are black. <b>Vision shrinks at night</b> from 6 tiles to 3.</p>
-      <p>Movement cost depends on biome — roads (1) are fastest, plains (1), forest (2), mountains/deep forest (3). Rivers and lakes <b>block</b> movement entirely. Low warmth, hunger, thirst, injury, and disease make walking cost more energy. Each step drains energy and advances the clock based on that effort.</p>
+      <p>The map is a 180×120 grid. Your viewport follows you. Seen tiles are remembered in fog. Night runs from 20:00 to 06:00; vision shrinks from 6 tiles to 3, with carried lights adding visibility.</p>
+      <p>Roads cost 5 minutes per tile, plains 6, forests/hills/ruins 10, harsh terrain 12, and mountains/deep forest/swamp 15. Rivers and lakes block walking. Poor condition increases costs. Auto-walk chooses the fastest known route and can stop at nightfall.</p>
       <p><b>Hazardous biomes</b>: swamps and irradiated zones can damage you when you walk through; radiation can give you disease. Snow drains warmth fast.</p>
       <p><b>Your village</b> is the 🔥 marker — adjacent to it, your followers join your settlement and you're "at home" for trading/recruiting purposes.</p>
     </div>
 
     <div class="guide-section" id="g-encounters">
       <h3>🧭 Encounters (walk into things)</h3>
-      <p>The map is full of <b>features</b> (resource nodes, ruins, oddities) and <b>entities</b> (people and creatures). To interact, just walk onto the tile.</p>
+      <p>Use <b>Search nearby</b> or right-click to harvest features within one tile. Walk into people to talk and enemies to fight. Hidden traps still trigger on contact.</p>
       <ul>
-        <li><b>Resource features</b> (berry bushes, dead trees, stone outcrops, scrap piles…) — auto-looted. They have a number of charges and disappear when depleted.</li>
+        <li><b>Resource features</b> have limited charges. Harvest plants in 5 minutes, search ordinary features in 20, and mine in 30 before tool bonuses. Only renewable plants regrow naturally.</li>
         <li><b>Underground entrances</b> (⛏ mines, 🕳 caves / drains, 🚇 subway stairs) — open an expedition dialog. Shallow routes are safer; deep routes take more time and energy but have better loot and more danger.</li>
         <li><b>Water sources</b> (springs, ponds, streams, wells) — unlimited charges; springs/wells give clean water.</li>
         <li><b>Ruins</b> (houses, hospitals, factories, libraries…) — best loot, often dangerous nearby.</li>
@@ -912,15 +971,15 @@ function renderGuideTab(root){
         <li><b>Attack</b> — deal damage based on combat skill + weapon bonus + traits. With <b>weapons</b> equipped, you get +6 dmg, and with <b>ammo</b> there's a 30% chance to fire for +6–12 extra (consumes ammo).</li>
         <li><b>Flee</b> — 40% base chance, +20% if quick trait, −5% per enemy danger level. Costs energy.</li>
       </ul>
-      <p><b>Damage mitigation</b>: 1 leather in storage reduces enemy hits by 2; 1 tools by 1.</p>
-      <p><b>Losing</b> doesn't auto-kill — you crawl home, losing ~20% of supplies. If your HP hits 0, the game ends.</p>
+      <p><b>Damage mitigation</b>: equipped leather armor reduces hits by 3. Stockpiled materials do not protect you in the field.</p>
+      <p><b>Losing</b> costs carried supplies. At zero health, a nearby medic or helper with accessible medicine may rescue you; otherwise a living child can continue your line, or the run ends.</p>
     </div>
 
     <div class="guide-section" id="g-build">
       <h3>🏗 Building</h3>
       <p>Open the <b>Build</b> tab, choose <b>Place</b>, then click an empty plot in the <b>Town</b> tab. Buildings are grouped by category: Shelter, Storage, Water, Food, Medicine, Community, Education, Crafting, Engineering, Defense, Trade.</p>
       <ul>
-        <li>Buildings cost resources up-front and take 1 phase to construct.</li>
+        <li>Buildings cost town resources up-front. Starter structures take 45 minutes, housing 3 hours, major structures 8 hours, and other buildings 2 hours. A carried hammer saves 20%.</li>
         <li>Each building has a <b>max count</b> — you can't spam the same thing forever.</li>
         <li>Most buildings need to be <b>unlocked by research</b> first.</li>
         <li>Many buildings provide <b>worker slots</b>; assign survivors in the Jobs tab to make them produce.</li>
@@ -980,10 +1039,10 @@ function renderGuideTab(root){
     <div class="guide-section" id="g-progression">
       <h3>🚀 Early-Game Walkthrough</h3>
       <ol>
-        <li><b>Day 1</b>: Stay near the campfire. Chop wood (×2), fetch dirty water, boil it.</li>
-        <li><b>Day 2</b>: Find a nearby <b>spring</b> or <b>pond</b> on the map for water. Forage berry bushes / mushrooms for food.</li>
-        <li><b>Research</b> <b>Survival Basics</b> → unlocks tents and rain barrels. Build a tent for a roof.</li>
-        <li><b>Research</b> <b>Basic Building</b> → unlocks shelter and storage shed. Build a storage shed to raise resource caps.</li>
+        <li><b>First morning</b>: Build a Crafting Table, make a sleeping bag and stone tools, and pack food and water. A spring, reeds, loose stone and wood are guaranteed near a new camp.</li>
+        <li><b>First expedition</b>: Explore, use Search nearby, recruit a survivor and return with supplies. Build a portable tent before overnight travel.</li>
+        <li><b>First shelter</b>: Starter tents and rain barrels are available immediately. Build a settlement tent for reliable sleep near home.</li>
+        <li><b>First garden</b>: Build a Garden, plant a seed and keep it watered. Add a shed before your stocks fill.</li>
         <li><b>Find a survivor</b> — walk the map looking for 🚶 wanderers, 🧒 lost children, 🩺 doctors, etc. Bring them to your campfire.</li>
         <li>Once you have helpers: research <b>Farming</b> → build a garden, assign a Gardener. Research <b>Crafting</b> → workshop, carpenter.</li>
         <li><b>Mid-game</b>: <b>Defense</b> → guard post + palisades before danger gets above 15. <b>Medicine</b> → herbalist for disease cures. <b>Masonry</b> → stone huts for better housing.</li>
@@ -1070,32 +1129,32 @@ function detectHint(g){
   if (!p || p.health <= 0) return null;
 
   // Critical needs first
-  if (p.energy < 15) return "I'm exhausted — I should <b>Sleep</b> (top-right button) or use the <b>💤 Rest</b> action. Walking with empty energy will get me stuck.";
+  if (p.energy < 15) return "I'm exhausted. Check the <b>Sleep</b> preview and deploy shelter before sleeping outside. A short <b>Rest</b> restores some energy but still exposes me to the weather.";
   if (p.thirst < 20){
-    if (g.resources.water >= 1) return "I'm parched. I have clean water — hit the <b>💧 Drink</b> action in the left panel.";
-    if (g.resources.dirty_water >= 2 && g.resources.charcoal >= 1) return "I'm parched. Use <b>⬛ Purify Water</b> to filter dirty water through charcoal, then drink.";
-    if (g.resources.dirty_water >= 2 && g.resources.wood >= 1) return "I'm parched. Use <b>🔥 Boil Water</b> to turn dirty water into safe water, then drink.";
+    if (playerAmount(g,"water") >= 1) return "I'm parched. I have accessible clean water — use <b>Drink</b>.";
+    if (playerCanPay(g,{dirty_water:2,charcoal:1})) return "I'm parched. Use <b>Filter Water</b> to filter dirty water through charcoal, then drink.";
+    if (playerCanPay(g,{dirty_water:2,wood:1})) return "I'm parched. Use <b>Boil Water</b> near a fire, then drink.";
     return "I'm parched and there's no water at camp. I should find a <b>spring (💧), pond, stream</b>, or the river on the map — then bring it back and boil it.";
   }
   if (p.hunger < 20){
-    if (g.resources.food >= 1) return "Starving — hit <b>🍞 Eat</b> in Quick Actions.";
-    if (g.resources.meat >= 1 || g.resources.crops >= 2) return "Starving. I have ingredients — use <b>🍳 Cook</b> to make food, then eat.";
+    if (playerAmount(g,"food") >= 1) return "Starving — use <b>Eat</b> in Quick Actions.";
+    if (playerAmount(g,"meat") >= 1 || playerAmount(g,"crops") >= 2) return "Starving. I have ingredients — use <b>Cook</b> near a fire, then eat.";
     return "Starving and the larder is empty. I should <b>🌿 Forage</b>, hunt a deer carcass, or walk to a berry bush on the map.";
   }
   if (p.health < 30) return "I'm hurt badly. Get back to camp, rest, and find medicine. Hot springs (♨) on the map also heal.";
   if (p.diseased){
-    if (g.resources.medicine >= 1) return "I'm sick — the day-end will use a medicine to cure me. Sit tight, or build a Clinic / Herbalist for ongoing care.";
+    if (playerAmount(g,"medicine") >= 1) return "I'm sick — use <b>Treat</b> beside Medicine in Inventory to recover.";
     return "I'm <b>diseased</b>. I need medicine — search hospitals, medicine cabinets, or research <b>Herbalism</b> to brew it from herbs.";
   }
   if (p.warmth < 25){
-    if (g.phase === 3) return "I'm freezing at night. Use <b>🔥 Warm Up</b> if I have wood or charcoal, or get next to the campfire / shelter.";
+    if (isNight(g)) return "I'm freezing at night. Fuel a field fire with wood, then <b>Warm up</b>, or return to a fueled settlement fire.";
     return "I'm cold. Use <b>🔥 Warm Up</b>, head back toward camp, or find shelter.";
   }
 
   // Resource shortages
-  if (g.resources.wood < 2) return "Wood is almost gone — without it I can't boil water or keep the fire going. <b>🪓 Chop Wood</b>, or find a dead tree / fallen log on the map.";
-  if (g.resources.water < 1 && g.resources.dirty_water < 1) return "No water at all in storage. Find a water source on the map (springs and wells are best) before thirst becomes critical.";
-  if (g.resources.food < 2) return "Food is running low. Forage, hunt, cook meat/crops, or build a Garden once Farming is researched.";
+  if (playerAmount(g,"wood") < 2) return "Accessible wood is almost gone. <b>Chop Wood</b>, search a fallen log, or pack supplies from home.";
+  if (playerAmount(g,"water") < 1 && playerAmount(g,"dirty_water") < 1) return "No accessible water. Find a spring or stream, or pack water from home.";
+  if (playerAmount(g,"food") < 2) return "Accessible food is running low. Forage, fish or cook; grow a Garden at home for future supplies.";
 
   // Settlement / progression
   const housing = getHousing(g);
@@ -1167,8 +1226,7 @@ function setRealtimeSpeed(speed){
 function realtimeTick(){
   if (!G || document.getElementById("modal-root").firstChild) return;
   if (G.survivors[0]?.health <= 0) return;
-  advanceOnePhase(G);
-  pushLog(G, "Time passes...", "dim");
+  passMinutes(G,15);
   render(); save();
 }
 
@@ -1179,4 +1237,136 @@ function toggleRealtime(){
 function cycleRealtimeSpeed(){
   const next = _rtSpeed === 0 ? 1 : (_rtSpeed % 3) + 1;
   setRealtimeSpeed(next);
+}
+
+function appendButton(root,label,action,disabled=false,title=""){
+  const b=el("button","small",label); b.onclick=action; b.disabled=!!disabled; b.title=title; root.appendChild(b); return b;
+}
+function renderInventoryTab(root){
+  const g=G,home=atSettlement(g),here=g.caches[positionKey(g)];
+  const card=el("div","card",`<h3>Inventory · ${fmt(packWeight(g))} / ${packCapacity(g)} load</h3><p class="muted">${home?"Transfer supplies between your pack and the settlement.":"Only carried supplies are available. Dropped items remain in a cache on this tile."} Tools are selected automatically; equip weapons, clothing and backpacks.</p>`);
+  const controls=el("div","row");
+  for(const preset of ["Day Trip","Overnight","Mining"]) appendButton(controls,"Pack "+preset,()=>packPreset(preset),!home);
+  appendButton(controls,"Deposit materials",depositMaterials,!home);
+  card.appendChild(controls);
+  card.appendChild(el("p","muted","Packing presets fill consumables only. Take camping gear and tools separately. Take/drop buttons split stacks; Full transfers as much as fits."));
+  for(const key of RES_KEYS){
+    const carried=g.inventory.resources[key] || 0,stored=g.resources[key] || 0;
+    if(!carried && !(home && stored)) continue;
+    const row=el("div","inventory-row",`<div><b>${RESOURCES[key].name}</b><div class="muted">Pack ${fmt(carried)}${home?` · Town ${fmt(stored)}`:""} · ${resourceWeight(key)} load/unit</div></div>`);
+    const buttons=el("div","row");
+    if(home){
+      appendButton(buttons,"Take 1",()=>transferResource(key,1,"take"),stored<1);
+      appendButton(buttons,"Take 5",()=>transferResource(key,5,"take"),stored<=0);
+      appendButton(buttons,"Full",()=>transferResource(key,stored,"take"),stored<=0);
+      appendButton(buttons,"Store",()=>transferResource(key,carried,"deposit"),carried<=0);
+    }
+    appendButton(buttons,"Drop 1",()=>transferResource(key,1,"drop"),carried<=0);
+    const use={food:"eat",water:"drink",dirty_water:"drink",bandages:"bandage"}[key];
+    if(use) appendButton(buttons,"Use",()=>playerAction(use),!!quickActionBlocker(g,use));
+    if(key==="medicine") appendButton(buttons,"Treat",useMedicine,playerAmount(g,"medicine")<1);
+    row.appendChild(buttons); card.appendChild(row);
+  }
+  root.appendChild(card);
+  const gearCard=el("div","card","<h3>Equipment</h3>");
+  const showGear=(list,source,label)=>{
+    gearCard.appendChild(el("h4","",label));
+    if(!list.length) gearCard.appendChild(el("div","muted","None."));
+    for(const item of list){
+      const def=ITEMS[item.type],equipped=Object.values(g.equipment).includes(item.id);
+      const row=el("div","inventory-row",`<div><b>${def.name}</b> ${equipped?'<span class="good">Equipped</span>':""}<div class="muted">${def.weight} load${item.durability!=null?` · ${Math.ceil(item.durability)}/${def.durability} ${def.kind==="light"?"fuel minutes":"durability"}`:""}${def.capacity?` · ${def.capacity} capacity`:""}${def.tier?` · tier ${def.tier}`:""}</div></div>`);
+      const buttons=el("div","row");
+      if(source==="pack"){
+        if(def.slot) appendButton(buttons,equipped?"Unequip":"Equip",()=>equipGear(item.id));
+        if(item.durability!=null) appendButton(buttons,def.kind==="light"?"Refuel":"Repair",()=>repairGear(item.id),item.durability>=def.durability,def.kind==="light"?"1 wood (torch) or oil (lantern)":"1 repair kit");
+        if(def.kind==="bedroll" || def.kind==="tent") appendButton(buttons,"Deploy",()=>campAction(def.kind==="tent"?"pitch_tent":"lay_bag"));
+        appendButton(buttons,home?"Store":"Drop",()=>moveGear(item.id,"pack"),equipped);
+      } else appendButton(buttons,"Take",()=>moveGear(item.id,source));
+      row.appendChild(buttons);gearCard.appendChild(row);
+    }
+  };
+  showGear(g.inventory.gear,"pack","Carried gear");
+  if(home) showGear(g.townGear,"town","Settlement equipment");
+  if(here) showGear(here.gear,"cache","Ground equipment here");
+  root.appendChild(gearCard);
+  if(here){
+    const cache=el("div","card","<h3>Ground cache here</h3>");
+    for(const [key,n] of Object.entries(here.resources)) if(n>0){
+      const row=el("div","inventory-row",`<span>${RESOURCES[key].name}: ${fmt(n)}</span>`);
+      appendButton(row,"Take what fits",()=>takeCacheResource(key,n)); cache.appendChild(row);
+    }
+    root.appendChild(cache);
+  }
+  const places=el("div","card","<h3>Known camps, caches and sites</h3>");
+  const keys=new Set([...Object.keys(g.markers),...Object.keys(g.camps),...Object.keys(g.workSites),...Object.keys(g.caches)]);
+  if(!keys.size) places.appendChild(el("p","muted","Mark locations from the World Map. Build an outpost on a cache to let haulers retrieve materials."));
+  for(const key of keys){
+    const label=g.markers[key] || (g.camps[key]?"Camp":"Ground cache");
+    const site=g.workSites[key], row=el("div","inventory-row",`<span>${escapeHtml(label)} (${key})${site?.kind==="mine"?` · ${fmt(site.remaining)} worker-days left`:""}</span>`);
+    appendButton(row,"Walk there",()=>{_activeTab="map";render();startAutoWalk(...key.split(",").map(Number));},key===positionKey(g));places.appendChild(row);
+  }
+  root.appendChild(places);
+}
+function renderCraftingTab(root){
+  const g=G,card=el("div","card",'<h3>Crafting</h3><p class="muted">Basic recipes work by hand. Stations are accessible inside your settlement. Crafted equipment enters your pack; overflow stays in a ground cache. Bulk crafting stops for interruptions.</p>');
+  const filter=el("select");
+  for(const [value,label] of [["all","All recipes"],["ready","Craftable now"],["gear","Equipment"],["materials","Materials and meals"]]){
+    const o=el("option","",label);o.value=value;o.selected=_craftFilter===value;filter.appendChild(o);
+  }
+  filter.onchange=()=>{_craftFilter=filter.value;render();}; card.appendChild(filter);
+  const grid=el("div","grid2");
+  const available={resources:Object.fromEntries(RES_KEYS.map(k=>[k,playerAmount(g,k)]))};
+  for(const [id,r] of Object.entries(RECIPES)){
+    const blocker=recipeBlocker(g,id);
+    if(_craftFilter==="ready" && blocker || _craftFilter==="gear" && !r.item || _craftFilter==="materials" && r.item) continue;
+    const item=el("div","item",`<div class="name">${recipeName(id)}</div><div class="cost">${costString(r.cost,available)}</div><div class="effect">${r.item?ITEMS[r.item].desc:Object.entries(r.output).map(([k,v])=>`${v} ${RESOURCES[k].name}`).join(", ")}</div><div class="meta">${timeText(recipeMinutes(g,id))} · 1 energy · ${r.station?(BUILDINGS[r.station]?.name || "Fire"):"Hand crafting"}${r.tech?` · ${KNOWLEDGE.find(n=>n.id===r.tech)?.name}`:""}</div>${blocker?`<div class="warn">${blocker}</div>`:""}`);
+    appendButton(item,"Craft",()=>craftRecipe(id),!!blocker);
+    if(!r.item) appendButton(item,"Craft x5",()=>craftRecipe(id,5),!!blocker);
+    grid.appendChild(item);
+  }
+  card.appendChild(grid);root.appendChild(card);
+}
+function renderFarmsTab(root){
+  const g=G,card=el("div","card",`<h3>Farming · ${g.weather.type} weather</h3><p class="muted">Plant one seed, keep soil moist, and harvest mature crops. Farmers tend one plot each, harvest and replant automatically. Seed Savers instead turn crops into seeds. Greenhouses double yield and protect growth from cold.</p>`);
+  if(!g.farms.length) card.appendChild(el("p","muted","Build a Garden Plot to begin. Early gardens can be tended by hand; a hoe speeds up planting."));
+  const grid=el("div","grid2");
+  for(const f of g.farms){
+    const crop=CROPS[f.crop];
+    const item=el("div","item",`<div class="name">${BUILDINGS[f.building].name} · ${crop.name}</div><div class="meta">${f.planted?(f.growth>=100?"Ready to harvest":"Growing"):"Unplanted"} · base ${crop.days} days</div>${bar("Growth",f.growth,100,"var(--good)")}${bar("Moisture",f.water,100,"var(--thirst)")}${bar("Fertility",f.fertility,100,"var(--accent)")}<div class="desc">Harvest: ${Object.entries(crop.output).map(([k,v])=>`${v} ${RESOURCES[k].name}`).join(", ")} (garden yield)</div>`);
+    const select=el("select");for(const [k,c] of Object.entries(CROPS)){const o=el("option","",c.name);o.value=k;o.selected=k===f.crop;select.appendChild(o);}
+    select.disabled=f.planted || !atSettlement(g);select.onchange=()=>farmAction(f.id,"select",select.value);item.appendChild(select);
+    const home=atSettlement(g);
+    appendButton(item,"Plant (1 seed)",()=>farmAction(f.id,"plant"),!home || f.planted || playerAmount(g,"seeds")<1);
+    appendButton(item,"Water (1)",()=>farmAction(f.id,"water"),!home || f.water>=100 || playerAmount(g,"water")<1);
+    appendButton(item,"Compost (1)",()=>farmAction(f.id,"fertilize"),!home || f.fertility>=100 || playerAmount(g,"compost")<1);
+    appendButton(item,"Harvest",()=>farmAction(f.id,"harvest"),!home || f.growth<100);
+    appendButton(item,f.fenced?"Fenced":"Fence (4 wood)",()=>farmAction(f.id,"fence"),!home || f.fenced || playerAmount(g,"wood")<4);
+    appendButton(item,f.irrigated?"Irrigated":"Irrigate (4 wood, 4 clay, rope)",()=>farmAction(f.id,"irrigate"),!home || f.irrigated || !playerCanPay(g,{wood:4,clay:4,rope:1}));
+    item.appendChild(el("div","muted",`Irrigation uses 0.25 stored water per phase when needed (dirty preferred). ${f.growth>=100?"Harvest waits if town storage is full.":""}`));
+    grid.appendChild(item);
+  }
+  card.appendChild(grid);root.appendChild(card);
+}
+function renderProductionOrders(root){
+  const g=G,card=el("div","card",'<h3>Production orders</h3><p class="muted">Orders replace a workplace\'s default resource production. Workers contribute 4 productive hours/day each. Targets count stored output; reserve limits protect ingredients. Jobs and crops continue while you travel.</p>');
+  const reserve=el("div","row");
+  for(const k of ["wood","food","water","seeds"]){
+    const label=el("label","",`Keep ${RESOURCES[k].name} `),input=el("input","quantity");input.type="number";input.min="0";input.max="999";input.value=g.reserves[k]||0;
+    input.onchange=()=>{g.reserves[k]=clamp(Number(input.value)||0,0,999);save();render();};label.appendChild(input);reserve.appendChild(label);
+  }
+  card.appendChild(reserve);
+  let shown=0;
+  for(const bid of Object.keys(g.buildings)){
+    if(!g.buildings[bid].count || !workplaceRecipes(bid).length) continue;
+    shown++;const order=g.orders[bid];
+    const item=el("div","item",`<div class="name">${BUILDINGS[bid].name} · ${productionWorkers(g,bid).length} workers</div><div class="${order && orderBlocker(g,bid,order)?"warn":"good"}">${order?`${recipeName(order.recipe)} · ${orderBlocker(g,bid,order) || "Working"} · ${order.mode==="maintain"?"Maintain":"Remaining"}: ${order.target}`:"Default building production"}</div>`);
+    const select=el("select");for(const id of workplaceRecipes(bid)){const o=el("option","",recipeName(id));o.value=id;o.selected=id===order?.recipe;select.appendChild(o);}item.appendChild(select);
+    const mode=el("select");mode.innerHTML='<option value="maintain">Maintain stock target</option><option value="count">Produce this many batches</option>';mode.value=order?.mode || "maintain";item.appendChild(mode);
+    const quantity=el("input","quantity");quantity.type="number";quantity.min="1";quantity.max="999";quantity.value=order?.target || 5;quantity.setAttribute("aria-label","Production target");item.appendChild(quantity);
+    appendButton(item,"Set order",()=>setWorkOrder(bid,select.value,mode.value,quantity.value));
+    if(order) appendButton(item,"Clear order",()=>{delete g.orders[bid];render();save();});
+    card.appendChild(item);
+  }
+  if(!shown) card.appendChild(el("p","muted","Build a Crafting Table or Furnace, assign its worker, then choose a production order."));
+  root.appendChild(card);
 }

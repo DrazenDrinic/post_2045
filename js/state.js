@@ -44,10 +44,14 @@ function newGame(){
   // Generate world
   generateMap(g);
   initTown(g);
+  g.resources.stone = 6;
+  g.resources.fiber = 12;
+  g.resources.rope = 2;
+  normalizeExpedition(g);
   // Initial log
   pushLog(g, "Day 1. You wake by a campfire among the cinders. The wind smells of rust.","info");
   pushLog(g, "Walk out into the world — find food, water and other survivors.","info");
-  pushLog(g, "Use WASD / arrow keys to move, or click a tile. Step into things to interact.","info");
+  pushLog(g, "Pack supplies in Inventory. Craft a sleeping bag and tools, then explore. Search nearby features using Quick Actions or right-click.","info");
   return g;
 }
 

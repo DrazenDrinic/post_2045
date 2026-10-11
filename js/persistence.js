@@ -88,14 +88,15 @@ function normalizeGame(g){
     if (!JOBS[g.jobs[s.id]]) g.jobs[s.id] = "none";
     s.job = g.jobs[s.id];
   }
-  for (const bid of Object.keys(g.workerAssign)){
-    if (!BUILDINGS[bid]) { delete g.workerAssign[bid]; continue; }
-    const slots = (BUILDINGS[bid].workers || 0) * (g.buildings[bid]?.count || 0);
-    const clean = [];
-    for (const id of g.workerAssign[bid] || []){
-      if (aliveIds.has(id) && clean.length < slots && !clean.includes(id)) clean.push(id);
-    }
-    g.workerAssign[bid] = clean;
+  // Jobs are authoritative; never leave a worker in two buildings or a destroyed workplace.
+  g.workerAssign = {};
+  for (const s of g.survivors){
+    const bid = JOBS[g.jobs[s.id]]?.building;
+    if (!bid) continue;
+    const ids = g.workerAssign[bid] || (g.workerAssign[bid] = []);
+    if (s.isPlayer || s.isChild || s.health<=0 || ids.length >= (BUILDINGS[bid].workers || 0)*(g.buildings[bid]?.count || 0)){
+      g.jobs[s.id] = s.job = "none";
+    } else ids.push(s.id);
   }
   if (!g.map || !Array.isArray(g.map) || g.map.length!==MAP_H || !Array.isArray(g.map[0]) || g.map[0].length!==MAP_W){
     generateMap(g);
@@ -105,7 +106,82 @@ function normalizeGame(g){
   g.playerX = clamp(g.playerX ?? g.villageX ?? 0, 0, MAP_W-1);
   g.playerY = clamp(g.playerY ?? g.villageY ?? 0, 0, MAP_H-1);
   if (!inBounds(g.villageX, g.villageY)) { g.villageX = g.playerX; g.villageY = g.playerY; }
+  normalizeExpedition(g);
   placeSage(g);
+}
+
+function normalizeExpedition(g){
+  const first = !g.inventory;
+  if (first) g.inventory = {resources:{},gear:[]};
+  if (!g.inventory.resources) g.inventory.resources = {};
+  if (!Array.isArray(g.inventory.gear)) g.inventory.gear = [];
+  if (!Array.isArray(g.townGear)) g.townGear = [];
+  if (!g.equipment) g.equipment = {};
+  if (!Number.isFinite(g.nextItemId)) g.nextItemId = 1;
+  for (const key of ["camps","caches","workSites","markers","orders","reserves","scoutCooldowns","undergroundCooldowns"]){
+    if (!g[key] || typeof g[key]!=="object" || Array.isArray(g[key])) g[key] = {};
+  }
+  if (!Array.isArray(g.farms)) g.farms = [];
+  if (!g.weather || !["clear","rain","cold"].includes(g.weather.type)) g.weather = {type:"clear"};
+  if (g.stopAtNight==null) g.stopAtNight = true;
+  for (const k of RES_KEYS){
+    const n = g.inventory.resources[k];
+    g.inventory.resources[k] = Number.isFinite(n) ? Math.max(0,n) : 0;
+  }
+  const allIds = new Set();
+  const cleanGear = list => (Array.isArray(list) ? list : []).filter(i=>{
+    if (!i || !ITEMS[i.type]) return false;
+    if (!Number.isInteger(i.id) || allIds.has(i.id)) i.id = g.nextItemId++;
+    g.nextItemId = Math.max(g.nextItemId,i.id+1); allIds.add(i.id);
+    if (ITEMS[i.type].durability) i.durability = clamp(Number.isFinite(i.durability) ? i.durability : ITEMS[i.type].durability,0,ITEMS[i.type].durability);
+    return true;
+  });
+  g.inventory.gear = cleanGear(g.inventory.gear); g.townGear = cleanGear(g.townGear);
+  const validKey = key => { const xy=key.split(",").map(Number); return xy.length===2 && xy.every(Number.isInteger) && inBounds(...xy); };
+  for (const [key,c] of Object.entries(g.caches)){
+    if (!validKey(key) || !c){ delete g.caches[key]; continue; }
+    if (!c.resources) c.resources = {};
+    for (const r of Object.keys(c.resources)) if (!RESOURCES[r] || !Number.isFinite(c.resources[r]) || c.resources[r]<0) delete c.resources[r];
+    c.gear = cleanGear(c.gear);
+  }
+  for (const [key,c] of Object.entries(g.camps)){
+    if (!validKey(key) || !c){ delete g.camps[key]; continue; }
+    c.gear = cleanGear(c.gear);
+    c.fuel = Math.max(0,Number.isFinite(c.fuel) ? c.fuel : 0);
+  }
+  for (const slot of ["weapon","clothing","pack"]){
+    if (!g.inventory.gear.some(i=>i.id===g.equipment[slot] && ITEMS[i.type].slot===slot)) delete g.equipment[slot];
+  }
+  for (const [id,order] of Object.entries(g.orders)){
+    if (!BUILDINGS[id] || !RECIPES[order?.recipe]) { delete g.orders[id]; continue; }
+    order.target = clamp(Number(order.target)||0,0,999);
+    order.progress = Math.max(0,Number(order.progress)||0);
+    order.mode = order.mode==="maintain" ? "maintain" : "count";
+  }
+  for (const id of ["garden","crop_field","greenhouse"]){
+    const count = g.buildings[id]?.count || 0;
+    const current = g.farms.filter(f=>f.building===id).slice(0,count);
+    while (current.length<count) current.push({id:id+"_"+current.length,building:id,crop:"vegetables",growth:0,water:60,fertility:80,planted:first});
+    g.farms = g.farms.filter(f=>f.building!==id).concat(current);
+  }
+  g.farms = g.farms.filter(f=>["garden","crop_field","greenhouse"].includes(f.building));
+  for (const f of g.farms){
+    if (!CROPS[f.crop]) f.crop = "vegetables";
+    f.growth = clamp(Number(f.growth)||0,0,100); f.water = clamp(Number(f.water)||0,0,100); f.fertility = clamp(Number(f.fertility)||0,0,100);
+  }
+  if (first){
+    // One-time transfer, not a copy: existing town savings are preserved.
+    for (const [k,n] of Object.entries({food:3,water:3,wood:4,cloth:2,arrows:4,medicine:1})){
+      const amount = Math.min(n,g.resources[k] || 0);
+      g.resources[k] -= addCarried(g,k,amount,false);
+    }
+    if (g.resources.weapons>=1){
+      g.resources.weapons--;
+      const weapon = giveItem(g,"salvaged_weapon"); g.equipment.weapon = weapon.id;
+    }
+    g.reserves.wood = 5;
+    pushLog(g,"Expedition supplies are now carried in your pack. Town stock stays at home; transfers are available inside the settlement.","info");
+  }
 }
 
 function normalizeTown(g){
@@ -159,7 +235,9 @@ function normalizeMap(g){
       if (t.feature && t.feature.charges==null) t.feature.charges = MAP_FEATURES[t.feature.type].charges;
       if (t.entity && !MAP_ENTITIES[t.entity.type]) t.entity = null;
       if (t.settlementBuilding && !BUILDINGS[t.settlementBuilding]) t.settlementBuilding = null;
-      g.map[y][x] = {biome:t.biome, feature:t.feature||null, entity:t.entity||null, settlementBuilding:t.settlementBuilding||null};
+      // Keep tile identity: open dialogs and combat callbacks can still reference it.
+      t.feature=t.feature || null; t.entity=t.entity || null; t.settlementBuilding=t.settlementBuilding || null;
+      g.map[y][x] = t;
     }
   }
   if (inBounds(g.villageX, g.villageY)) g.map[g.villageY][g.villageX].settlementBuilding = "campfire";

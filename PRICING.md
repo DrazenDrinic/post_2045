@@ -33,65 +33,76 @@
 
 | Action | Time | |
 |---|---:|:--|
-| 🪓 Chop wood | **1 phase** | `6h` |
-| 🌿 Gather / forage | **1 phase** | `6h` |
-| 🔥 Boil water | **1 phase** | `6h` |
-| 🧪 Purify water | **1 phase** | `6h` |
-| 🍳 Cook | **1 phase** | `6h` |
-| ♨️ Warm by fire | **1 phase** | `6h` |
-| 🎺 Gather spirits | **1 phase** | `6h` |
-| 🏹 Craft arrows | **1 phase** | `6h` |
-| 🦌 Hunt | **1 phase** | `6h` |
-| 🥋 Train (combat) | **1 phase** | `6h` |
-| 📖 Study a book | **1 phase** | `6h` |
-| 🪣 Fetch water | **60 min** | `1h` |
-| 💤 Rest | **120 min** | `2h` |
-| 🛏️ Sleep | **480 min** | `8h` |
+| 🪓 Chop wood | **30 min** | Axes reduce time 15/30/45% by tier |
+| 🌿 Gather / forage | **20 min** | Food, herbs and seeds |
+| 🔥 Boil water | **15 min** | Per batch |
+| 🧪 Purify water | **10 min** | Per batch |
+| 🍳 Cook | **20 min** | Per batch |
+| ♨️ Warm by fire | **15 min** | Requires a fueled nearby fire |
+| 🎺 Gather spirits | **30 min** | Nearby group |
+| 🏹 Craft arrows | **15 min** | 5 arrows |
+| 🦌 Hunt | **30 min** | Requires carried bow + arrow |
+| 🥋 Train (combat) | **60 min** | +0.5 combat |
+| 📖 Study a book | **60 min** | +2–5 knowledge |
+| 🪣 Fetch water | **10 min** | 2 water; canteen 3; bucket 5 |
+| 💤 Rest | **30 min** | +7 energy up to 60 before phase decay; exposure applies |
+| 🛏️ Sleep | **120 / 240 / 480 min** | Shelter-dependent recovery; can be interrupted |
 | 🍞 Eat / 💧 Drink | **free** | — |
 
 ### 🏗️ Other time-spending activities
 
 | Activity | Time | |
 |---|---:|:--|
-| 🔨 Build any building | **1 phase** | `6h` |
-| 💕 Court a survivor | **1 phase** | `6h` |
-| ⚔️ Combat resolution (win / lose / flee) | **1 phase** | `6h` |
+| 🔨 Build a starter tent, table, garden or barrel | **45 min** | Hammer reduces time 20% |
+| Build other housing | **180 min** | Hammer reduces time 20% |
+| Build warehouse, town hall, barracks or community hall | **480 min** | Hammer reduces time 20% |
+| Build other structures | **120 min** | Hammer reduces time 20% |
+| 💕 Court a survivor | **30 min** | |
+| ⚔️ Combat resolution (win / flee) | **15 min** | Charged once; a fatal defeat resolves immediately |
 
 ### 🗺️ Exploring ruins — *Quick Scout*
 
 <table>
 <tr><th>Time</th><th>Locations</th></tr>
 <tr>
-<td align="center"><b>2 phases</b><br><code>12h</code></td>
+<td align="center"><b>60 min</b><br><code>1h</code></td>
 <td>🌲 Forest · 🛣️ Abandoned Road · 🏚️ Ruined House · 🏞️ Riverbank</td>
 </tr>
 <tr>
-<td align="center"><b>3 phases</b><br><code>18h</code></td>
+<td align="center"><b>120 min</b><br><code>2h</code></td>
 <td>🛒 Old Market · 🚓 Police Station · 🏥 Hospital · ⛽ Gas Station · 🚜 Farm Ruins · ⚔️ Raider Camp · 🏫 Old School</td>
 </tr>
 <tr>
-<td align="center"><b>4 phases</b><br><code>24h</code></td>
+<td align="center"><b>180 min</b><br><code>3h</code></td>
 <td>🏭 Factory Ruins · 🪖 Military Checkpoint · 🌳 Deep Forest · 🚪 Underground Shelter</td>
 </tr>
 </table>
+
+Quick Scout departs from town, consumes **1 carried food + 1 carried clean water**, and has a **12-hour cooldown per route**. Loot enters the backpack; excess remains in a ground cache. Combat adds its own 15 minutes.
 
 ### 🕳️ Underground sites
 
 | Depth | Time | |
 |---|---:|:--|
-| Shallow *(all sites)* | **1 phase** | `6h` |
-| Deep *(all sites)* | **2 phases** | `12h` |
+| Shallow *(all sites)* | **45 min** | Mines require a pickaxe |
+| Deep *(all sites)* | **90 min** | Requires a fueled light; mines also require a pickaxe |
+
+Each underground route has a 24-hour cooldown. Renewable plants take 5 minutes to search, ordinary features 20 minutes, and mineral nodes 30 minutes before tool bonuses.
 
 ### 🚶 World-map walking
 
-> Time per tile = `(biome cost ÷ 14) × 360 min`, increased further by cold / hunger / thirst penalties.
+> Travel time and energy are independent values in `TRAVEL` in `js/data.js`. Both are multiplied by condition penalties, without rounding energy up to whole units.
 
-| Biome | Move cost | ≈ Time / tile |
+| Biome | Energy / tile | Time / tile |
 |---|:---:|---:|
-| `·` Plains · `=` Road | 1 | **~26 min** |
-| `♣` Forest · `⌒` Hills · `▦` Ruins · `☢` Irradiated · `❄` Snow | 2 | **~51 min** |
-| `♠` Deep Forest · `▲` Mountain · `≡` Swamp | 3 | **~77 min** |
-| `~` River · `≈` Lake | 99 | 🚫 impassable |
+| Road | 0.3 | **5 min** |
+| Plains / village | 0.4 | **6 min** |
+| Forest / hills / ruins | 0.6 | **10 min** |
+| Irradiated / snow / wasteland | 0.7 | **12 min** |
+| Deep forest / mountain / swamp | 0.9 | **15 min** |
+| River / lake | — | Impassable |
+
+Each step drains 0.12 hunger and 0.18 thirst (0.4 thirst in wasteland). A carried canteen reduces movement thirst drain by 20%. Needs also decay at normal six-hour phase boundaries. Night runs from 20:00 to 06:00. Live mode advances 15 game minutes per timer tick.
 
 ---
 
@@ -106,11 +117,92 @@
 | 🍳 Cook | 1 🍖 meat + 1 🪵 wood **or** 2 🌾 crops + 1 🪵 wood | 3 🍞 food |
 | 🍞 Eat | 1 🍞 food | +30 hunger |
 | 💧 Drink | 1 💧 clean water *(or dirty — 15% illness)* | +30 / +20 thirst |
-| ♨️ Warm by fire | 1 ⬛ charcoal **or** 1 🪵 wood | +warmth |
-| 🏹 Craft arrows | 1 🪵 wood + 1 🦴 bones | 3–5 🏹 arrows |
-| 🦌 Hunt | 1 🏹 arrow | 🍖 meat · 🦌 hides · 🦴 bones |
+| ♨️ Warm by fire | Nearby fueled fire | +30 warmth |
+| 🏹 Craft arrows | 1 🪵 wood + 1 🦴 bones | 5 🏹 arrows |
+| 🦌 Hunt | Carried bow + 1 🏹 arrow | 🍖 meat · 🦌 hides · 🦴 bones |
 | 📖 Study | 1 📖 book | +2–5 🧠 knowledge |
 | ⚔️ Ranged combat shot | 1 📦 ammo per hit *(needs a weapon)* | bonus damage |
+
+### Inventory, camping and field work
+
+Town storage is accessible inside the settlement footprint. Away from town, actions use carried supplies. Pack capacity is **30 load**, **45 with an equipped canvas backpack**, or **65 with a framed backpack**. Most small items weigh 0.05–0.3; wood weighs 1, stone/ore 1.2. Transfers do not create supplies; packing presets draw from town stock.
+
+| Action | Materials | Time |
+|---|---|---:|
+| Gather fiber | None | 15 min |
+| Collect loose stone | None | 20 min |
+| Mine | Working pickaxe; uses durability | 30 min before tier bonus |
+| Dig | Working shovel; uses durability | 17 min with shovel |
+| Fish | Working fishing rod + nearby water | 30 min |
+| Pitch portable tent | Deploy carried tent | 15 min |
+| Lay sleeping bag | Deploy carried bag | 5 min |
+| Build lean-to | 4 wood + 4 fiber | 30 min |
+| Fuel field campfire | 1 wood → 4 hours fuel | 10 min |
+| Pack camp | Recover gear; extinguish fire | 10 min |
+| Bandage | 1 bandage → +15 HP, clears injury | 5 min |
+| Use medicine | 1 medicine → +25 HP, clears disease | 5 min |
+| Repair tool | 1 repair kit | 10 min |
+| Refuel light | 1 wood for torch / 1 oil for lantern | 10 min |
+| Claim mine / fishing site | 2 wood + 1 rope | 30 min |
+| Establish supply outpost | 6 wood + 1 rope | 30 min |
+
+Sleep restores approximately **4 energy/hour on bare ground**, **7 under a lean-to or tent**, **9 with a sleeping bag**, **12 with tent + bag**, or **14 near housing**. Normal phase decay still applies. Exposure and radiation can kill; ambushes interrupt sleep. Field fires burn down even when you leave. Equipment must be deployed to provide camp shelter.
+
+### Crafting recipes
+
+The Crafting tab reads exact costs and requirements from `RECIPES`. Hand recipes are available immediately; better equipment needs stations and sometimes research.
+
+| Item | Ingredients | Time / station |
+|---|---|---|
+| Rope | 3 fiber | 10 min / hand |
+| Cloth | 4 fiber | 15 min / table |
+| Planks x2 | 2 wood | 15 min / table (9 with a saw) |
+| Bandages x3 | 1 cloth + 1 water | 10 min / hand |
+| Repair kit | 2 metal + 1 cloth | 20 min / table |
+| Stone axe | 2 wood + 3 stone + 1 rope | 20 min / hand |
+| Stone pickaxe | 2 wood + 4 stone + 1 rope | 25 min / hand |
+| Hoe | 2 wood + 2 stone + 1 rope | 20 min / hand |
+| Hammer | 1 wood + 2 stone | 20 min / hand |
+| Shovel | 2 wood + 2 metal | 25 min / table |
+| Knife | 2 metal + 1 wood | 20 min / table |
+| Saw | 3 metal + 1 wood | 30 min / table |
+| Crowbar | 2 iron | 30 min / forge |
+| Bow | 3 wood + 2 rope | 30 min / table |
+| Fit salvaged weapon | 1 weapons | 10 min / hand |
+| Fishing rod | 2 wood + 1 rope + 1 bones | 20 min / hand |
+| Bucket | 2 metal + 1 rope | 20 min / table |
+| Canteen | 1 leather + 1 rope | 20 min / table |
+| Torch | 1 wood + 1 cloth | 5 min / hand |
+| Lantern | 2 metal + 1 glass + 1 oil | 30 min / table |
+| Compass | 2 iron + 1 glass + 1 parts | 30 min / table |
+| Binoculars | 3 glass + 2 metal + 2 parts | 45 min / workshop |
+| Sleeping bag | 4 cloth + 1 rope | 25 min / hand |
+| Portable tent | 6 cloth + 2 rope + 2 wood | 40 min / table |
+| Canvas backpack | 4 cloth + 2 rope | 30 min / table |
+| Framed backpack | 4 leather + 2 planks + 3 rope | 45 min / workshop |
+| Warm coat | 4 cloth + 2 hides | 40 min / table |
+| Raincoat | 3 cloth + 1 oil | 35 min / table |
+| Leather armor | 4 leather + 2 rope | 45 min / workshop |
+| Iron axe / pickaxe | 3 iron + 2 wood + 1 rope | 40 min / forge + Toolmaking |
+| Steel axe / pickaxe | 3 steel + 2 wood + 1 rope | 40 min / forge + Metalworking |
+| Charcoal x2 | 3 wood | 30 min / kiln |
+| Iron | 2 ore + 1 charcoal OR 3 metal + 1 charcoal | 30 min / furnace |
+| Steel | 2 iron + 2 charcoal | 45 min / forge + Metalworking |
+| Glass x2 | 3 sand + 1 charcoal | 30 min / furnace |
+| Bricks x3 | 3 clay + 1 charcoal | 30 min / furnace |
+| Nails x4 | 1 metal | 15 min / workshop |
+| Compost x2 | 1 crops + 2 fiber | 20 min / hand |
+
+### Farming and work orders
+
+- Plant: **1 seed**, 20 minutes (10 with a hoe). Water: **1 clean water**, 5 minutes. Fertilize: **1 compost**, 5 minutes. Harvest: 10 minutes.
+- Fence a plot: **4 wood**, 20 minutes; prevents wildlife damage. Irrigate a plot: **4 wood + 4 clay + 1 rope**, 30 minutes; uses 0.25 stored water per phase when needed (dirty preferred).
+- Harvests wait on the plot when storage cannot hold the produce. Spoiled food returns one compost per five lost food.
+- Vegetables take 2 base days; grain/fiber crops 3; herbs 2.5; orchards 4. Moisture, fertility and cold modify growth. Fields yield 1.5x produce; greenhouses 2x. Seeds are not multiplied.
+- Farmers tend one plot each and use actual town seeds/water/compost. Mature crops return seeds; orchards regrow without replanting.
+- Work orders contribute **4 productive hours per worker/day**, modified by worker bonuses. They spend the same recipe ingredients as personal crafting and replace the workplace's default production.
+- Choose a fixed batch count or a maintained stock target. Wood/food/water/seed reserves protect work-order, building-conversion, farming and general-job inputs. Eating, drinking and the settlement fire still use essential supplies.
+- A claimed mine supports 40 worker-days. Fishing sites are renewable. Haulers recover 8 resource units/day from marked supply outposts.
 
 ### 🏘️ Buildings
 
@@ -210,6 +302,9 @@
 | Building | Cost |
 |---|---|
 | 🛠️ Workshop | 15 wood · 5 stone · 1 tools |
+| Crafting Table | 6 wood · 2 stone |
+| Furnace | 10 stone · 4 clay |
+| Fishing Station | 8 wood · 2 rope |
 | 🪚 Carpenter Hut | 12 wood · 1 tools |
 | 🪵 Sawmill | 25 wood · 5 metal · 2 tools |
 | 🔨 Toolsmith | 10 wood · 10 metal · 5 stone |
@@ -287,13 +382,13 @@ Spent on the research tree (knowledge points), cheapest first:
 > [!WARNING]
 > Not purchases, but they still cost you resources:
 >
-> - **⚔️ Combat defeat** — lose ~**20%** of your wood, food, water, cloth, metal, and weapons.
+> - **⚔️ Combat defeat** — lose up to **20%** of carried wood, food, water, cloth, metal, and weapons; town stocks are not taken by a field defeat.
 > - **🔥 Raids / theft** — attackers can steal food, water, metal, weapons, ammo, cloth, and tools.
 
 <div align="center">
 
 ---
 
-*Generated from `js/data.js` and `js/actions.js` · prices are per single build / action.*
+*Reference for `js/data.js`, `js/actions.js` and `js/world-map.js` · prices are per single build / action. UI costs are read from the same action and recipe tables.*
 
 </div>

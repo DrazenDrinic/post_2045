@@ -33,7 +33,7 @@ function showCombatModal(){
   m.innerHTML = `<h2>⚔ Combat: ${c.name}</h2>
     ${bar("Enemy HP", c.hp, c.maxHp, "var(--bad)")}
     ${bar("Your HP", p.health, p.maxHealth, "var(--hp)")}
-    <div class="muted" style="font-size:11px;margin-top:4px">Danger Lv ${c.danger}. Your combat skill: ${p.skills.combat}. ${G.resources.weapons>=1?"⚔ Armed":"🚫 Unarmed"} ${G.resources.ammo>=1?"📦 Ammo":""}</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">Danger Lv ${c.danger}. Your combat skill: ${p.skills.combat}. ${equippedItem(G,"weapon")?ITEMS[equippedItem(G,"weapon").type].name:"Unarmed"} · ${fmt(G.inventory.resources.ammo||0)} carried ammo</div>
     <div class="log" style="max-height:140px;overflow:auto;margin-top:6px;background:#0c1115;border:1px solid var(--line);padding:4px;border-radius:3px">
       ${c.log.slice(-8).map(l=>'<div class="e">'+l+'</div>').join("")}
     </div>`;

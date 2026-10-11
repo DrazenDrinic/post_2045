@@ -535,3 +535,178 @@ const BUILDING_CAP_MULTIPLIER = 3;
 for (const id in BUILDINGS){
   if (id !== "campfire" && BUILDINGS[id].max) BUILDINGS[id].max *= BUILDING_CAP_MULTIPLIER;
 }
+
+// Expedition economy. Times are game minutes; resource quantities remain compatible with old saves.
+const ACTION_COSTS = {
+  chop_wood:30, gather:20, fetch_water:10, boil_water:15, purify_water:10,
+  cook:20, warm_fire:15, gather_spirits:30, craft_arrows:15, hunt:30,
+  rest:30, sleep:480, train:60, study:60, eat:0, drink:0,
+  gather_fiber:15, gather_stone:20, mine:30, dig:20, fish:30, bandage:5,
+  light_fire:10, pitch_tent:15, lay_bag:5, pack_camp:10, survey:15, lean_to:30,
+};
+const ACTION_ENERGY = {chop_wood:3,gather:2,fetch_water:1,boil_water:1,purify_water:1,
+  cook:1,craft_arrows:1,hunt:4,gather_spirits:2,train:5,study:2,gather_fiber:2,
+  gather_stone:2,mine:2,dig:3,fish:2,pitch_tent:1,lay_bag:1,light_fire:1,lean_to:1,pack_camp:1};
+const TRAVEL = {
+  road:[5,0.3], plains:[6,0.4], village:[6,0.4], forest:[10,0.6], hills:[10,0.6],
+  ruins:[10,0.6], snow:[12,0.7], radio:[12,0.7], desert:[12,0.7],
+  deep_forest:[15,0.9], mountain:[15,0.9], swamp:[15,0.9],
+};
+Object.assign(RESOURCES, {
+  fiber:{name:"Plant Fiber",icon:""}, ore:{name:"Iron Ore",icon:""},
+  sand:{name:"Sand",icon:""}, compost:{name:"Compost",icon:""},
+  bandages:{name:"Bandages",icon:""}, repair_kits:{name:"Repair Kits",icon:""},
+});
+RES_KEYS.push("fiber","ore","sand","compost","bandages","repair_kits");
+const RESOURCE_WEIGHTS = {wood:1, stone:1.2, ore:1.2, metal:0.8, iron:0.8, steel:0.8,
+  planks:0.8, bricks:1, clay:0.8, sand:0.8, water:0.6, dirty_water:0.6,
+  food:0.3, meat:0.4, crops:0.3, seeds:0.05, herbs:0.05, arrows:0.05,
+  ammo:0.05, nails:0.05, fiber:0.1, cloth:0.2, rope:0.2, weapons:2, tools:1.5};
+const ITEMS = {
+  stone_axe:{name:"Stone Axe",kind:"axe",tier:1,weight:1.5,durability:60},
+  iron_axe:{name:"Iron Axe",kind:"axe",tier:2,weight:1.5,durability:140},
+  steel_axe:{name:"Steel Axe",kind:"axe",tier:3,weight:1.5,durability:240},
+  stone_pick:{name:"Stone Pickaxe",kind:"pick",tier:1,weight:2,durability:60},
+  iron_pick:{name:"Iron Pickaxe",kind:"pick",tier:2,weight:2,durability:140},
+  steel_pick:{name:"Steel Pickaxe",kind:"pick",tier:3,weight:2,durability:240},
+  shovel:{name:"Shovel",kind:"shovel",tier:1,weight:1.5,durability:100},
+  hoe:{name:"Hoe",kind:"hoe",tier:1,weight:1.5,durability:100},
+  knife:{name:"Knife",kind:"knife",tier:1,weight:0.4,durability:100},
+  hammer:{name:"Hammer",kind:"hammer",tier:1,weight:1,durability:100},
+  saw:{name:"Saw",kind:"saw",tier:1,weight:1,durability:100},
+  crowbar:{name:"Crowbar",kind:"crowbar",tier:1,weight:1.5,durability:120},
+  bow:{name:"Bow",kind:"bow",slot:"weapon",damage:4,weight:1,durability:100},
+  salvaged_weapon:{name:"Salvaged Weapon",kind:"weapon",slot:"weapon",damage:6,weight:2,durability:140},
+  fishing_rod:{name:"Fishing Rod",kind:"rod",tier:1,weight:0.8,durability:100},
+  bucket:{name:"Bucket",kind:"bucket",weight:0.8},
+  canteen:{name:"Canteen",kind:"canteen",weight:0.3},
+  torch:{name:"Torch",kind:"light",vision:2,weight:0.3,durability:240},
+  lantern:{name:"Lantern",kind:"light",vision:3,weight:0.8,durability:720},
+  compass:{name:"Home Compass",kind:"compass",weight:0.2},
+  binoculars:{name:"Binoculars",kind:"survey",weight:0.5},
+  sleeping_bag:{name:"Sleeping Bag",kind:"bedroll",weight:2},
+  portable_tent:{name:"Portable Tent",kind:"tent",weight:3},
+  backpack:{name:"Canvas Backpack",kind:"pack",slot:"pack",capacity:45,weight:1},
+  hiking_pack:{name:"Framed Backpack",kind:"pack",slot:"pack",capacity:65,weight:1.5},
+  warm_coat:{name:"Warm Coat",kind:"coat",slot:"clothing",insulation:3,weight:1.5},
+  raincoat:{name:"Raincoat",kind:"coat",slot:"clothing",insulation:1,rainproof:true,weight:1},
+  leather_armor:{name:"Leather Armor",kind:"armor",slot:"clothing",armor:3,weight:2},
+};
+const RECIPES = {
+  rope:{name:"Twist rope",cost:{fiber:3},output:{rope:1},minutes:10},
+  cloth:{name:"Weave cloth",cost:{fiber:4},output:{cloth:1},minutes:15,station:"crafting_table"},
+  planks:{name:"Cut planks",cost:{wood:2},output:{planks:2},minutes:15,station:"crafting_table"},
+  bandages:{name:"Clean bandages",cost:{cloth:1,water:1},output:{bandages:3},minutes:10},
+  repair_kits:{name:"Repair kit",cost:{metal:2,cloth:1},output:{repair_kits:1},minutes:20,station:"crafting_table"},
+  stone_axe:{cost:{wood:2,stone:3,rope:1},item:"stone_axe",minutes:20},
+  stone_pick:{cost:{wood:2,stone:4,rope:1},item:"stone_pick",minutes:25},
+  shovel:{cost:{wood:2,metal:2},item:"shovel",minutes:25,station:"crafting_table"},
+  hoe:{cost:{wood:2,stone:2,rope:1},item:"hoe",minutes:20},
+  knife:{cost:{metal:2,wood:1},item:"knife",minutes:20,station:"crafting_table"},
+  hammer:{cost:{wood:1,stone:2},item:"hammer",minutes:20},
+  saw:{cost:{metal:3,wood:1},item:"saw",minutes:30,station:"crafting_table"},
+  crowbar:{cost:{iron:2},item:"crowbar",minutes:30,station:"forge"},
+  bow:{cost:{wood:3,rope:2},item:"bow",minutes:30,station:"crafting_table"},
+  salvaged_weapon:{name:"Fit a salvaged weapon",cost:{weapons:1},item:"salvaged_weapon",minutes:10},
+  fishing_rod:{cost:{wood:2,rope:1,bones:1},item:"fishing_rod",minutes:20},
+  bucket:{cost:{metal:2,rope:1},item:"bucket",minutes:20,station:"crafting_table"},
+  canteen:{cost:{leather:1,rope:1},item:"canteen",minutes:20,station:"crafting_table"},
+  torch:{cost:{wood:1,cloth:1},item:"torch",minutes:5},
+  lantern:{cost:{metal:2,glass:1,oil:1},item:"lantern",minutes:30,station:"crafting_table"},
+  compass:{cost:{iron:2,glass:1,parts:1},item:"compass",minutes:30,station:"crafting_table"},
+  binoculars:{cost:{glass:3,metal:2,parts:2},item:"binoculars",minutes:45,station:"workshop"},
+  sleeping_bag:{cost:{cloth:4,rope:1},item:"sleeping_bag",minutes:25},
+  portable_tent:{cost:{cloth:6,rope:2,wood:2},item:"portable_tent",minutes:40,station:"crafting_table"},
+  backpack:{cost:{cloth:4,rope:2},item:"backpack",minutes:30,station:"crafting_table"},
+  hiking_pack:{cost:{leather:4,planks:2,rope:3},item:"hiking_pack",minutes:45,station:"workshop"},
+  warm_coat:{cost:{cloth:4,hides:2},item:"warm_coat",minutes:40,station:"crafting_table"},
+  raincoat:{cost:{cloth:3,oil:1},item:"raincoat",minutes:35,station:"crafting_table"},
+  leather_armor:{cost:{leather:4,rope:2},item:"leather_armor",minutes:45,station:"workshop"},
+  arrows:{name:"Bone arrows",cost:{wood:1,bones:1},output:{arrows:5},minutes:15},
+  charcoal:{name:"Burn charcoal",cost:{wood:3},output:{charcoal:2},minutes:30,station:"charcoal_kiln"},
+  iron:{name:"Smelt ore",cost:{ore:2,charcoal:1},output:{iron:1},minutes:30,station:"furnace"},
+  scrap_iron:{name:"Recycle scrap iron",cost:{metal:3,charcoal:1},output:{iron:1},minutes:30,station:"furnace"},
+  steel:{name:"Forge steel",cost:{iron:2,charcoal:2},output:{steel:1},minutes:45,station:"forge",tech:"metalworking"},
+  glass:{name:"Fire glass",cost:{sand:3,charcoal:1},output:{glass:2},minutes:30,station:"furnace"},
+  bricks:{name:"Fire bricks",cost:{clay:3,charcoal:1},output:{bricks:3},minutes:30,station:"furnace"},
+  nails:{name:"Forge nails",cost:{metal:1},output:{nails:4},minutes:15,station:"workshop"},
+  clean_water:{name:"Boil water",cost:{dirty_water:2,wood:1},output:{water:2},minutes:15,station:"fire"},
+  filtered_water:{name:"Filter water",cost:{dirty_water:2,charcoal:1},output:{water:2},minutes:10},
+  meal:{name:"Cook meat",cost:{meat:1,wood:1},output:{food:3},minutes:20,station:"fire"},
+  vegetable_meal:{name:"Cook crops",cost:{crops:2,wood:1},output:{food:3},minutes:20,station:"fire"},
+  compost:{name:"Compost scraps",cost:{crops:1,fiber:2},output:{compost:2},minutes:20},
+};
+for (const kind of ["axe","pick"]){
+  for (const [tier,material] of [[2,"iron"],[3,"steel"]]){
+    const id = material+"_"+kind;
+    RECIPES[id] = {cost:{[material]:3,wood:2,rope:1},item:id,minutes:40,station:"forge",tech:tier===3?"metalworking":"toolmaking"};
+  }
+}
+const CROPS = {
+  vegetables:{name:"Vegetables",days:2,output:{crops:6,seeds:2}},
+  grain:{name:"Grain",days:3,output:{crops:10,seeds:3}},
+  flax:{name:"Fiber crop",days:3,output:{fiber:12,seeds:2}},
+  herbs:{name:"Medicinal herbs",days:2.5,output:{herbs:7,seeds:2}},
+  orchard:{name:"Orchard",days:4,output:{food:10,seeds:2},perennial:true},
+};
+Object.assign(BUILDINGS, {
+  crafting_table:{name:"Crafting Table",icon:"",cat:"Crafting",desc:"Hand-built bench for equipment, repairs and worker orders.",cost:{wood:6,stone:2},workers:1,max:6,effects:{}},
+  furnace:{name:"Furnace",icon:"",cat:"Crafting",desc:"Smelt ore and fire glass or bricks. Assign a smelter and a work order.",cost:{stone:10,clay:4},workers:1,max:4,effects:{}},
+  fishing_station:{name:"Fishing Station",icon:"",cat:"Food",desc:"A workplace for fishers; requires a discovered fishing site.",cost:{wood:8,rope:2},workers:2,max:4,effects:{}},
+});
+STARTER_BUILDINGS.add("crafting_table"); STARTER_BUILDINGS.add("furnace"); STARTER_BUILDINGS.add("fishing_station");
+BUILDINGS.storage_shed.workers = 1;
+BUILDINGS.rain_barrel.workers = 1;
+BUILDINGS.workshop.effects = {convert:{from:{metal:1,wood:1},to:{tools:0.3,nails:2},perWorker:3}};
+BUILDINGS.toolsmith.effects = {convert:{from:{metal:2,wood:1},to:{tools:1,nails:2},perWorker:2}};
+for (const id of ["garden","crop_field","greenhouse"]){
+  BUILDINGS[id].effects = {farm:true};
+  BUILDINGS[id].desc = "Plant crops, water, fertilize and harvest. Assigned farmers automate tending and replanting.";
+}
+Object.assign(JOBS, {
+  stone_collector:{name:"Stone Collector",building:null,output:{stone:4},desc:"Collects loose stone near the settlement."},
+  fiber_gatherer:{name:"Fiber Gatherer",building:null,output:{fiber:5},desc:"Collects reeds and useful plant fibers."},
+  clay_digger:{name:"Clay Digger",building:null,output:{clay:3,sand:2},desc:"Digs clay and sand for ceramics."},
+  rope_maker:{name:"Rope Maker",building:null,output:{rope:2},consume:{fiber:6},desc:"Twists fiber into useful rope."},
+  miner:{name:"Miner",building:null,output:{ore:3,stone:2},site:"mine",desc:"Works a claimed ore deposit. Claim a vein while exploring."},
+  fisher:{name:"Fisher",building:"fishing_station",output:{meat:4},direct:true,site:"fish",desc:"Works a claimed fishing site."},
+  purifier_camp:{name:"Camp Water Purifier",building:null,consume:{dirty_water:6,wood:3},output:{water:6},desc:"Boils clean water for the settlement."},
+  fletcher:{name:"Fletcher",building:null,consume:{wood:2,bones:2},output:{arrows:10},desc:"Makes arrows for expeditions."},
+  equipment_crafter:{name:"Equipment Crafter",building:"crafting_table",output:{},desc:"Fulfills the crafting table's production order."},
+  smelter:{name:"Smelter",building:"furnace",output:{},desc:"Fulfills the furnace's production order."},
+  composter:{name:"Composter",building:null,consume:{crops:1,fiber:2},output:{compost:3},desc:"Turns plant scraps into compost."},
+  hauler:{name:"Expedition Hauler",building:null,output:{},desc:"Returns up to 8 resource units/day from caches at claimed outposts."},
+});
+JOBS.camp_cook.consume = {crops:2,wood:1}; JOBS.camp_cook.output = {food:3,happiness_all:0.15};
+JOBS.seed_saver.direct = true; JOBS.seed_saver.consume = {crops:1}; JOBS.seed_saver.output = {seeds:2};
+JOBS.rain_tender.direct = true;
+JOB_KEYS.splice(0, JOB_KEYS.length, ...Object.keys(JOBS));
+Object.assign(MAP_FEATURES, {
+  reeds:{name:"Reeds",icon:"",desc:"Fibers for rope and cloth.",biomes:["plains","swamp","forest"],loot:{fiber:[3,6]},charges:3},
+  sand_bank:{name:"Sand Bank",icon:"",desc:"Sand for glassmaking.",biomes:["plains","desert"],loot:{sand:[3,5]},charges:3},
+});
+MAP_FEATURES.iron_vein.loot = {ore:[3,5],stone:[1,2]};
+for (const id of ["berry_bush","mushroom_patch","wild_herbs","apple_tree","edible_roots","wild_wheat","seed_pod","reeds"]){
+  MAP_FEATURES[id].renewable = true;
+}
+for (const id in LOCATIONS) LOCATIONS[id].minutes = ({2:60,3:120,4:180})[LOCATIONS[id].time];
+for (const site of Object.values(UNDERGROUND_SITES)){
+  site.shallow.minutes = 45; site.deep.minutes = 90;
+}
+for (const [key,source] of Object.entries({fiber:"cloth",ore:"iron",sand:"clay",compost:"seeds",bandages:"medicine",repair_kits:"tools"})) RESOURCES[key].icon=RESOURCES[source].icon;
+BUILDINGS.crafting_table.icon=BUILDINGS.workshop.icon;
+BUILDINGS.furnace.icon=BUILDINGS.forge.icon;
+BUILDINGS.fishing_station.icon=MAP_FEATURES.fish_pool.icon;
+MAP_FEATURES.reeds.icon=MAP_FEATURES.wild_wheat.icon;
+MAP_FEATURES.sand_bank.icon=MAP_FEATURES.clay_deposit.icon;
+for (const [id,desc] of Object.entries({
+  axe:"Faster wood gathering with increased yield.",pick:"Mine ore, coal and stone; higher tiers improve speed and yield.",
+  shovel:"Dig sand and clay.",hoe:"Halves planting time.",knife:"More meat, hides and bones from hunting.",
+  hammer:"Build 20% faster.",saw:"Cut planks 40% faster.",crowbar:"Faster salvage and extra scrap from ruins.",
+  bow:"Required for ranged hunting; equip for combat.",weapon:"Equip for combat; carried ammo can add damage.",
+  rod:"Fish beside a water source.",bucket:"Fetch 5 water at once.",canteen:"Fetch 3 water and use 20% less travel thirst.",
+  light:"Adds night vision and permits deep underground searches; consumes fuel minutes.",
+  compass:"Points toward the settlement while carried.",survey:"Survey a ten-tile radius.",
+  bedroll:"Deploy to improve sleep warmth and recovery.",tent:"Deploy to shelter from rain and reduce incidents.",
+  pack:"Equip to increase carrying capacity.",coat:"Equip for weather protection.",armor:"Equip to reduce incoming damage by 3."
+})) for(const item of Object.values(ITEMS)) if(item.kind===id) item.desc=desc;

@@ -148,18 +148,21 @@ function beginSageDeepThink(){
 function offlineSageReply(g, text){
   const p = g.survivors[0];
   const q = text.toLowerCase();
+  if (/sleep|tent|camp|cold|bag/.test(q)) return "Check the Sleep preview before resting outside. Deploy a sleeping bag and tent, or build a lean-to from 4 wood and 4 fiber. One wood fuels your field fire for four hours. Exposure and radiation can kill; an attack interrupts sleep.";
+  if (/craft|inventory|pack|compass|tool/.test(q)) return "Build a Crafting Table, then open Crafting for recipes. Carry tools to use them; equip weapons, clothes and backpacks. The compass points home only while carried. Packing presets take food and water from town stock; take shelter separately.";
+  if (/farm|crop|seed/.test(q)) return "Plant a seed in a Garden and keep its moisture above 10. Compost improves fertility. Farmers tend a plot each, including harvesting and replanting; Seed Savers make seeds instead. Jobs can also maintain crafting stock targets.";
   const urgent = detectHint(g);
   if (urgent && /what|next|help|stuck|do|advice|survive/.test(q)){
     return `The ash is speaking plainly: ${stripTags(urgent)} Do that first, then look farther down the road.`;
   }
   if (/water|thirst|drink/.test(q)){
-    if (g.resources.water >= 1) return "Drink clean water now. A dry throat makes poor choices. After that, keep dirty water boiling while the fire still has wood.";
-    if (g.resources.dirty_water >= 2 && g.resources.wood >= 1) return "You have what you need: boil the dirty water. Clean water beats courage every time.";
+    if (playerAmount(g,"water") >= 1) return "Drink clean water now. A dry throat makes poor choices. After that, keep dirty water boiling while the fire still has wood.";
+    if (playerCanPay(g,{dirty_water:2,wood:1})) return "You have the ingredients: boil dirty water near a fire. Clean water beats courage every time.";
     return "Seek springs, wells, ponds, or streams on the map. Bring back dirty water if you must, but boil it before it becomes sickness.";
   }
   if (/food|hunger|starv|eat/.test(q)){
-    if (g.resources.food >= 1) return "Eat before your hands shake. Then forage or cook meat and crops into proper food.";
-    if (g.resources.meat >= 1 || g.resources.crops >= 2) return "There is a meal hiding in your stores. Cook it, then eat. Later, research Farming and put a worker in the soil.";
+    if (playerAmount(g,"food") >= 1) return "Eat before your hands shake. Then forage or cook meat and crops into proper food.";
+    if (playerAmount(g,"meat") >= 1 || playerAmount(g,"crops") >= 2) return "There is a meal in your accessible supplies. Cook by a fire, then eat. Plant a garden and put a worker in the soil.";
     return "Berries, mushrooms, roots, farms, and carcasses keep people alive. Search close to camp before pushing into teeth and ruins.";
   }
   if (/build|research|knowledge/.test(q)){

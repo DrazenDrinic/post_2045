@@ -87,6 +87,11 @@ function generateMap(g){
   populateFeatures(g, 1400);
   // Sprinkle entities
   populateEntities(g, 650);
+  // A fresh run always has reachable basics for tools, shelter and drinking water.
+  for (const [dx,dy,type] of [[2,0,"spring"],[-2,0,"stone_outcrop"],[0,2,"reeds"],[0,-2,"fallen_log"]]){
+    map[g.villageY+dy][g.villageX+dx].feature={type,charges:MAP_FEATURES[type].charges};
+    map[g.villageY+dy][g.villageX+dx].entity=null;
+  }
   // Place the unique Old Sage within sight of the village
   placeSage(g);
 
@@ -119,7 +124,7 @@ function canPlaceSettlementBuilding(g, id, x, y){
   if (!inBounds(x,y) || !inSettlementBuildArea(g,x,y)) return false;
   if (x===g.villageX && y===g.villageY) return false;
   const t = g.map[y][x];
-  if (!t || t.settlementBuilding || t.entity || t.feature) return false;
+  if (!t || t.settlementBuilding || t.entity || t.feature || g.camps?.[x+","+y] || g.workSites?.[x+","+y]) return false;
   return !BIOMES[t.biome].blocks && !BIOMES[t.biome].hazard && !BIOMES[t.biome].radiation;
 }
 
@@ -226,7 +231,7 @@ function placeSage(g){
 }
 
 function computeVisible(g){
-  const radius = (g.phase===3) ? VISION_NIGHT : VISION_DAY;
+  const radius = visionRadius(g);
   const vis = {};
   for (let dy=-radius; dy<=radius; dy++){
     for (let dx=-radius; dx<=radius; dx++){
@@ -246,6 +251,14 @@ function computeVisible(g){
   return vis;
 }
 
+function visionRadius(g){
+  return isNight(g) ? VISION_NIGHT+(ITEMS[carriedTool(g,"light")?.type]?.vision || 0) : VISION_DAY;
+}
+function travelCost(g,biome){
+  const values=TRAVEL[biome] || [15,0.9], penalty=movementPenalty(g.survivors[0]);
+  return {minutes:Math.round(values[0]*penalty),energy:values[1]*penalty};
+}
+
 function isAdjacentToVillage(g){
   return Math.abs(g.playerX-g.villageX)<=1 && Math.abs(g.playerY-g.villageY)<=1;
 }
@@ -254,6 +267,7 @@ function isAdjacentToVillage(g){
 let _autoWalk = null;
 
 function tryMove(g, dx, dy){
+  if (_combat || Math.abs(dx)+Math.abs(dy)!==1) return false;
   const nx = g.playerX + dx, ny = g.playerY + dy;
   if (!inBounds(nx,ny)) return false;
   const t = g.map[ny][nx];
@@ -264,18 +278,18 @@ function tryMove(g, dx, dy){
   }
   const p = g.survivors[0];
   if (p.health<=0) return false;
-  const cost = Math.ceil(b.cost * movementPenalty(p));
-  if (p.energy < cost){
+  const cost = travelCost(g,t.biome);
+  if (p.energy < cost.energy){
     pushLog(g, movementPenalty(p)>1 ? "Cold, hunger, or thirst slows you too much to keep walking." : "Too tired to keep walking.","warn");
     return false;
   }
   g.playerX = nx; g.playerY = ny;
-  p.energy = clamp(p.energy - cost, 0, 100);
-  if (b.cold) p.warmth = clamp(p.warmth - 4, 0, 100);
+  p.energy = clamp(p.energy - cost.energy, 0, 100);
+  if (b.cold && !ITEMS[equippedItem(g,"clothing")?.type]?.insulation) p.warmth = clamp(p.warmth - 0.6, 0, 100);
   g.stepAccum = 0;
   // small hunger/thirst drift
-  if (chance(0.5)) p.hunger = clamp(p.hunger-1,0,100);
-  if (chance(0.5)) p.thirst = clamp(p.thirst-1,0,100);
+  p.hunger=clamp(p.hunger-0.12,0,100);
+  p.thirst=clamp(p.thirst-(b.dry?0.4:0.18)*(carriedTool(g,"canteen")?0.8:1),0,100);
 
   // Random biome hazard (radiation, swamp)
   if (b.hazard && chance(b.hazard)){
@@ -286,11 +300,10 @@ function tryMove(g, dx, dy){
     if (p.health<=0){ removeDead(g); return true; }
   }
 
-  // Trigger encounter on the new tile
+  const epoch=_activityEpoch;
+  passMinutes(g,cost.minutes);
+  if(p.health<=0 || g.survivors[0]!==p || _activityEpoch!==epoch) return true;
   encounterTile(g, nx, ny);
-
-  // Walking advances time based on movement effort: 14 walking energy ~= one 6-hour phase.
-  passMinutes(g, Math.round((cost / STEP_PER_PHASE) * 360));
 
   // If reached village area, recruit followers
   if (isAdjacentToVillage(g) && g.followers.length > 0){
@@ -352,14 +365,17 @@ function stepAutoWalk(){
   const dxRaw = Math.sign(next[0] - G.playerX);
   const dyRaw = Math.sign(next[1] - G.playerY);
   const hpBefore = G.survivors[0].health;
+  const nightBefore = isNight(G);
   let moved = tryMoveQuiet(G, dxRaw, dyRaw);
+  if (_autoWalk!==w){ render(); save(); return; }
   if (!moved){ cancelAutoWalk(); render(); return; }
   // Stop if damage taken or low energy
   if (G.survivors[0].health < hpBefore){ cancelAutoWalk(); pushLog(G, "You halt — you've been hurt.","warn"); render(); save(); return; }
   if (G.survivors[0].energy < 5){ cancelAutoWalk(); pushLog(G,"You stop, exhausted.","warn"); render(); save(); return; }
+  if (!nightBefore && isNight(G) && G.stopAtNight){ cancelAutoWalk(); pushLog(G,"Nightfall. Check your supplies and shelter before continuing.","warn"); render(); save(); return; }
   render();
   save();
-  _autoWalk.timer = setTimeout(stepAutoWalk, 70);
+  if (_autoWalk===w) w.timer = setTimeout(stepAutoWalk, 70);
 }
 
 function findAutoPath(g, tx, ty){
@@ -368,20 +384,36 @@ function findAutoPath(g, tx, ty){
   if (BIOMES[g.map[ty][tx].biome].blocks) return [];
   const start = g.playerX+","+g.playerY;
   const goal = tx+","+ty;
-  const queue = [[g.playerX, g.playerY]];
+  // Dijkstra with a binary heap: roads can beat a shorter mountain route.
+  const queue = [];
+  const push=node=>{
+    queue.push(node); let i=queue.length-1;
+    while(i>0){ const p=(i-1)>>1; if(queue[p][0]<=node[0]) break; queue[i]=queue[p]; i=p; } queue[i]=node;
+  };
+  const pop=()=>{
+    const first=queue[0],last=queue.pop();
+    if(queue.length){ let i=0; while(i*2+1<queue.length){ let c=i*2+1; if(c+1<queue.length && queue[c+1][0]<queue[c][0]) c++; if(queue[c][0]>=last[0]) break; queue[i]=queue[c]; i=c; } queue[i]=last; }
+    return first;
+  };
+  push([0,g.playerX,g.playerY]);
+  const distance = {[start]:0};
   const came = {[start]: null};
   const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-  for (let qi=0; qi<queue.length; qi++){
-    const [x,y] = queue[qi];
+  while(queue.length){
+    const [d,x,y] = pop();
+    if(d!==distance[x+","+y]) continue;
     if (x===tx && y===ty) break;
     for (const [dx,dy] of dirs){
       const nx=x+dx, ny=y+dy, key=nx+","+ny;
-      if (!inBounds(nx,ny) || came[key]!==undefined) continue;
+      if (!inBounds(nx,ny)) continue;
       if (!g.explored[key]) continue;
       const b = BIOMES[g.map[ny][nx].biome];
       if (b.blocks) continue;
+      const next=d+travelCost(g,g.map[ny][nx].biome).minutes;
+      if(next >= (distance[key] ?? Infinity)) continue;
+      distance[key]=next;
       came[key] = [x,y];
-      queue.push([nx,ny]);
+      push([next,nx,ny]);
     }
   }
   if (came[goal]===undefined) return [];
@@ -415,13 +447,15 @@ function tileWaterKind(tile){
 
 function fetchWaterFromTile(g, tile){
   const kind = tileWaterKind(tile);
-  if (!kind) return;
+  if (!kind || g.survivors[0].health<=0 || _combat) return;
+  if (!nearbyTile(g,1,t=>t===tile)) { pushLog(g,"Move next to the water first.","warn"); render(); return; }
   const p = g.survivors[0];
-  addResource(g, kind==="clean" ? "water" : "dirty_water", 1);
+  if (p.energy<1) return;
+  const amount=carriedTool(g,"bucket")?5:carriedTool(g,"canteen")?3:2;
+  addPlayerResource(g, kind==="clean" ? "water" : "dirty_water", amount);
   p.energy = clamp(p.energy - 1, 0, 100);
-  p.thirst = clamp(p.thirst - 1, 0, 100);
-  pushLog(g, kind==="clean" ? "You fetched clean water. (+1 water)" : "You fetched water. (+1 dirty water)", "good");
-  passMinutes(g, 60);
+  pushLog(g, `Fetched ${amount} ${kind==="clean"?"clean":"dirty"} water.`, "good");
+  passMinutes(g, ACTION_COSTS.fetch_water);
   render(); save();
 }
 
@@ -434,7 +468,7 @@ function openTileActionDialog(g, x, y){
   const entity = tile.entity && MAP_ENTITIES[tile.entity.type];
   const building = tile.settlementBuilding && BUILDINGS[tile.settlementBuilding];
   const titleParts = [];
-  if (entity && (!entity.nightOnly || g.phase===3)) titleParts.push(`${entity.icon} ${entity.name}`);
+  if (entity && (!entity.nightOnly || isNight(g))) titleParts.push(`${entity.icon} ${entity.name}`);
   if (feature && !feature.hidden) titleParts.push(`${feature.icon} ${feature.name}`);
   if (building) titleParts.push(`${building.icon} ${building.name}`);
   titleParts.push(`${biome.icon} ${biome.name}`);
@@ -445,10 +479,15 @@ function openTileActionDialog(g, x, y){
   lines.push(`<p class="muted">Distance: ${dist} tile${dist===1?"":"s"}. Right-click nearby tiles to choose an action.</p>`);
   const buttons = [];
   if (!(x===g.playerX && y===g.playerY) && !biome.blocks){
+    const route=findAutoPath(g,x,y);
+    const minutes=route.reduce((n,[rx,ry])=>n+travelCost(g,g.map[ry][rx].biome).minutes,0);
+    const energy=route.reduce((n,[rx,ry])=>n+travelCost(g,g.map[ry][rx].biome).energy,0);
+    lines.push(`<p class="info">Known route: ${route.length?`${timeText(minutes)} / ${fmt(energy)} energy`:"no route"}.</p>`);
     buttons.push({label:"Walk here", primary:true, action:()=>{ closeModal(); startAutoWalk(x,y); }});
   }
   if (feature && !feature.hidden){
-    buttons.push({label:dist<=1 ? "Search / use" : "Walk and search", action:()=>{
+    const minutes=feature.underground?null:featureMinutes(g,t.feature.type);
+    buttons.push({label:dist<=1 ? `Search / use${minutes!=null?` (${timeText(minutes)})`:""}` : "Walk closer to search", action:()=>{
       closeModal();
       if (dist<=1){ handleFeature(g, tile, x, y); render(); save(); }
       else startAutoWalk(x,y);
@@ -456,7 +495,7 @@ function openTileActionDialog(g, x, y){
   }
   const waterKind = tileWaterKind(tile);
   if (waterKind){
-    buttons.push({label:waterKind==="clean" ? "Fetch clean water (1h)" : "Fetch dirty water (1h)", action:()=>{ closeModal(); fetchWaterFromTile(g, tile); }});
+    buttons.push({label:`Fetch ${waterKind} water (10m)`,disabled:dist>1, action:()=>{ closeModal(); fetchWaterFromTile(g, tile); }});
   }
   if (entity && entity.friendly){
     buttons.push({label:dist<=3 ? "Talk" : "Walk to talk", action:()=>{
@@ -466,7 +505,7 @@ function openTileActionDialog(g, x, y){
     }});
   }
   if (entity && entity.huntable){
-    const canHunt = dist>=1 && dist<=3 && g.resources.arrows>=1;
+    const canHunt = dist>=1 && dist<=3 && playerAmount(g,"arrows")>=1 && carriedTool(g,"bow");
     buttons.push({label:"Hunt with arrow", disabled:!canHunt, title:canHunt ? "" : "Need arrows and range 1-3.", action:()=>{
       closeModal(); huntTarget({tile, x, y, entity, dist});
     }});
@@ -475,8 +514,11 @@ function openTileActionDialog(g, x, y){
     buttons.push({label:dist<=1 ? "Engage" : "Approach / attack", action:()=>{ closeModal(); if (dist<=1) encounterTile(g,x,y); else startAutoWalk(x,y); }});
   }
   if (dist<=1 && (building || (x===g.villageX && y===g.villageY))){
-    buttons.push({label:"Rest here (2h)", action:()=>{ closeModal(); playerAction("rest"); }});
+    buttons.push({label:"Rest here (30m)", action:()=>{ closeModal(); playerAction("rest"); }});
     buttons.push({label:"Warm up", action:()=>{ closeModal(); playerAction("warm_fire"); }});
+  }
+  if(dist<=1 && tile.feature && ["iron_vein","mine_entrance","fish_pool","spring","stream","pond"].includes(tile.feature.type)){
+    buttons.push({label:"Claim site (2 wood + rope, 30m)",disabled:!!g.workSites[x+","+y],action:()=>{closeModal();claimWorkSite(x,y);}});
   }
   buttons.push({label:"Cancel", action:closeModal});
   showModal({title:titleParts.join(" / "), body:lines.join(""), buttons});
@@ -489,12 +531,11 @@ function encounterTile(g, x, y){
   if (t.entity){
     const e = MAP_ENTITIES[t.entity.type];
     if (e){
-      const dormant = e.nightOnly && g.phase!==3;
+      const dormant = e.nightOnly && !isNight(g);
       if (!dormant){
         if (e.hostile){
           startCombat(e.enemy, ()=>{
             t.entity = null;
-            passPhase(G,1);
             render(); save();
           }, ()=>{
             render(); save();
@@ -513,7 +554,9 @@ function encounterTile(g, x, y){
     }
   }
   if (t.feature){
-    handleFeature(g, t, x, y);
+    const f=MAP_FEATURES[t.feature.type];
+    if(f.hidden || (f.damage && !f.loot && !f.event) || (f.energyLoss && !f.loot && !f.event)) handleFeature(g,t,x,y);
+    else pushLog(g,`Found ${f.name}. Use Search nearby or right-click to investigate.`,"info");
   }
 }
 
@@ -546,9 +589,14 @@ function moveAnimalAway(g, x, y){
 }
 
 function handleFeature(g, t, x, y){
+  if (!t.feature || tileDistance(g,x,y)>1 || g.survivors[0].health<=0 || _combat) return;
   const f = MAP_FEATURES[t.feature.type];
   if (!f) return;
   const p = g.survivors[0];
+  if(!f.hidden && (f.loot || f.event || f.underground)){
+    if(p.energy<2){ pushLog(g,"Rest before searching.","warn"); return; }
+    if(["iron_vein","boulder_pile","coal_seam"].includes(t.feature.type) && !carriedTool(g,"pick")){ pushLog(g,"Carry a working pickaxe to mine this deposit.","warn"); return; }
+  }
 
   // Hidden hazard: trigger immediately
   if (f.hidden){
@@ -559,6 +607,7 @@ function handleFeature(g, t, x, y){
     }
     if (f.energyLoss){ p.energy = clamp(p.energy - f.energyLoss, 0, 100); }
     t.feature = null;
+    if(p.health<=0) removeDead(g);
     return;
   }
 
@@ -570,6 +619,7 @@ function handleFeature(g, t, x, y){
     if (f.energyLoss) p.energy = clamp(p.energy - f.energyLoss, 0, 100);
     if (f.curse && chance(0.3)){ p.diseased = true; pushLog(g,`You contracted illness.`,"bad"); }
     if (f.charges < 99) { t.feature.charges--; if (t.feature.charges<=0) t.feature = null; }
+    if(p.health<=0) removeDead(g);
     return;
   }
   if (f.energyLoss && !f.loot && !f.event){
@@ -583,6 +633,7 @@ function handleFeature(g, t, x, y){
   // Events
   if (f.event){
     triggerEvent(g, f, t, x, y);
+    if(p.health<=0) removeDead(g); else passMinutes(g,15);
     return;
   }
 
@@ -592,15 +643,19 @@ function handleFeature(g, t, x, y){
     return;
   }
 
-  // Normal loot interaction — prompt or auto?
-  // Auto-loot for simplicity, also apply special effects.
+  // Explicit harvesting consumes a node charge and the matching tool's durability.
   const got = {};
+  const featureType=t.feature.type, minutes=featureMinutes(g,featureType);
+  const mineral=["iron_vein","boulder_pile","coal_seam","stone_outcrop"].includes(t.feature.type);
+  const salvage=!!f.loot && ("metal" in f.loot || "parts" in f.loot || "nails" in f.loot);
+  const tool=mineral?carriedTool(g,"pick"):WOOD_FEATURES.has(featureType)?carriedTool(g,"axe"):salvage?carriedTool(g,"crowbar"):null;
   if (f.loot){
     for (const r in f.loot){
       const [lo,hi] = f.loot[r];
-      const amt = rint(lo, hi);
+      const bonus=tool && (mineral || WOOD_FEATURES.has(featureType) || salvage && ["metal","parts","nails"].includes(r)) ? ITEMS[tool.type].tier || 1 : 0;
+      const amt = rint(lo, hi)+bonus;
       if (amt>0){
-        const gained = addResource(g, r, amt);
+        const gained = addPlayerResource(g, r, amt);
         if (gained>0) got[r] = (got[r]||0)+gained;
       }
     }
@@ -625,7 +680,8 @@ function handleFeature(g, t, x, y){
   if (f.curse && chance(0.3)){ p.diseased = true; pushLog(g,`You feel sick.`,"bad"); }
 
   // Energy cost for searching
-  p.energy = clamp(p.energy - 3, 0, 100);
+  p.energy = clamp(p.energy - 2, 0, 100);
+  wearTool(g,tool);
 
   const gainedStr = Object.entries(got).map(([k,v])=>`+${fmt(v)} ${RESOURCES[k].name}`).join(", ");
   if (gainedStr) pushLog(g, `${f.icon} ${f.name}: ${gainedStr}.`,"good");
@@ -642,6 +698,18 @@ function handleFeature(g, t, x, y){
     t.feature.charges--;
     if (t.feature.charges <= 0) t.feature = null;
   }
+  if (p.health<=0){ removeDead(g); return; }
+  if(!_combat) passMinutes(g,minutes);
+}
+
+function featureMinutes(g,type){
+  const f=MAP_FEATURES[type];
+  if(f.hidden || f.damage && !f.loot || f.energyLoss && !f.loot) return 0;
+  if(f.event) return 15;
+  if(["iron_vein","boulder_pile","coal_seam","stone_outcrop"].includes(type)) return actionMinutes(g,"mine");
+  if(f.renewable) return 5;
+  if(f.loot && ("metal" in f.loot || "parts" in f.loot || "nails" in f.loot) && carriedTool(g,"crowbar")) return 15;
+  return 20;
 }
 
 function triggerEvent(g, f, t, x, y){
@@ -675,7 +743,7 @@ function triggerEvent(g, f, t, x, y){
       const got = {};
       for (let i=0;i<3;i++){
         const r = pick(items); const amt = rint(1,3);
-        const gain = addResource(g,r,amt);
+        const gain = addPlayerResource(g,r,amt);
         got[r] = (got[r]||0)+gain;
       }
       pushLog(g,`Cache opened: ${Object.entries(got).map(([k,v])=>'+'+fmt(v)+' '+RESOURCES[k].name).join(", ")}.`,"good");
@@ -708,7 +776,7 @@ function triggerEvent(g, f, t, x, y){
       break;
     }
     case "grave":{
-      const got = addResource(g,"bones",rint(2,4));
+      const got = addPlayerResource(g,"bones",rint(2,4));
       if (got>0) pushLog(g,`You collect bones from the graveyard. (+${got})`,"info");
       if (chance(0.25)){ p.morale = clamp(p.morale-10,0,100); pushLog(g,"The silence weighs on you.","warn"); }
       break;
@@ -735,7 +803,11 @@ function openUndergroundDialog(g, siteKey, tile, x, y){
 function undergroundExplore(siteKey, depth, tile, x, y){
   const site = UNDERGROUND_SITES[siteKey];
   const route = site?.[depth];
-  if (!site || !route) return;
+  if (!site || !route || _combat || G.survivors[0].health<=0 || tileDistance(G,x,y)>1) return;
+  const key=`${x},${y}:${depth}`;
+  if((G.undergroundCooldowns[key] || 0)>gameMinutes(G)){ pushLog(G,"This route needs a day before another search.","warn"); closeModal(); render(); return; }
+  if(depth==="deep" && (carriedTool(G,"light")?.durability || 0)<route.minutes){ pushLog(G,`Carry a light with at least ${route.minutes} minutes of fuel for this route.`,"warn"); closeModal(); render(); return; }
+  if(siteKey==="mine" && !carriedTool(G,"pick")){ pushLog(G,"Carry a pickaxe for a mining expedition.","warn"); closeModal(); render(); return; }
   const p = G.survivors[0];
   if (p.energy < route.energy){
     pushLog(G, `Too exhausted to enter ${site.name}.`, "warn");
@@ -744,15 +816,20 @@ function undergroundExplore(siteKey, depth, tile, x, y){
   }
   closeModal();
   cancelAutoWalk();
+  G.undergroundCooldowns[key]=gameMinutes(G)+1440;
   p.energy = clamp(p.energy - route.energy, 0, 100);
   p.hunger = clamp(p.hunger - Math.ceil(route.energy/5), 0, 100);
   p.thirst = clamp(p.thirst - Math.ceil(route.energy/5), 0, 100);
   pushLog(G, `You enter ${site.name}: ${route.label.toLowerCase()}.`, "info");
+  const epoch=_activityEpoch;
+  // Surface night consumption is handled by passMinutes; charge the remaining underground time here.
+  wearTool(G,carriedTool(G,"light"),route.minutes-nightMinutesDuring(G,route.minutes));
+  passMinutes(G,route.minutes);
+  if(p.health<=0 || G.survivors[0]!==p || epoch!==_activityEpoch){ render(); save(); return; }
 
   const finish = ()=> finishUndergroundExplore(siteKey, depth, tile, x, y);
   if (chance(route.danger)){
     startCombat(pick(route.enemies), finish, ()=>{
-      passPhase(G, 1);
       pushLog(G, `You stumble back out of ${site.name}.`, "warn");
       render(); save();
     });
@@ -771,7 +848,7 @@ function finishUndergroundExplore(siteKey, depth, tile, x, y){
     const [lo, hi] = route.loot[r];
     const amt = rint(lo, hi);
     if (amt>0){
-      const gained = addResource(G, r, amt);
+      const gained = addCarried(G, r, amt);
       if (gained>0) got[r] = (got[r]||0) + gained;
     }
   }
@@ -791,7 +868,6 @@ function finishUndergroundExplore(siteKey, depth, tile, x, y){
     G.knowledge += k;
     pushLog(G, `Old markings underground teach you something. +${k} knowledge.`, "good");
   }
-  passPhase(G, route.time);
   const gainedStr = Object.entries(got).map(([k,v])=>`+${fmt(v)} ${RESOURCES[k].name}`).join(", ");
   pushLog(G, `${site.icon} ${site.name}: ${gainedStr || "nothing useful"}.`, gainedStr ? "good" : "info");
   if (tile?.feature && tile.feature.charges < 99){
@@ -864,10 +940,9 @@ function openFriendlyDialog(g, ent, x, y){
         title:"🤕 A Wounded Survivor",
         body:`<p>${surv.name} is bleeding and pale. They need treatment.</p>`,
         buttons:[
-          {label:`Use 1 medicine, then recruit (have: ${Math.floor(g.resources.medicine)})`, primary:true,
+          {label:`Use 1 medicine, then recruit (have: ${Math.floor(playerAmount(g,"medicine"))})`, primary:true,
             action:()=>{
-              if (g.resources.medicine<1){ pushLog(g,"You have no medicine.","warn"); closeModal(); return; }
-              g.resources.medicine -= 1;
+              if (!playerPay(g,{medicine:1})){ pushLog(g,"You have no accessible medicine.","warn"); closeModal(); return; }
               surv.health = 70;
               g.followers.push(surv);
               g.map[y][x].entity = null;
@@ -918,7 +993,7 @@ function openFriendlyDialog(g, ent, x, y){
         buttons:[
           {label:"Listen (gain knowledge)", primary:true, action:()=>{
             const k = rint(3,6); g.knowledge += k;
-            addResource(g, "books", rint(0,1));
+            addPlayerResource(g, "books", rint(0,1));
             pushLog(g, `The hermit shares wisdom. +${k} knowledge.`,"good");
             g.map[y][x].entity = null;
             closeModal(); render(); save();
@@ -946,7 +1021,7 @@ function openFriendlyDialog(g, ent, x, y){
     }
     case "trader":{
       g.map[y][x].entity = null;
-      traderArrives(g);
+      traderArrives(g,true);
       return;
     }
     case "hunter":{
@@ -960,16 +1035,16 @@ function openFriendlyDialog(g, ent, x, y){
         body:`<p>A skilled hunter offers to share game and join you, in exchange for shelter.</p>`,
         buttons:[
           {label:"Recruit (gain meat + hides)", primary:true, action:()=>{
-            const m = addResource(g,"meat",rint(2,4));
-            const h = addResource(g,"hides",rint(1,2));
+            const m = addPlayerResource(g,"meat",rint(2,4));
+            const h = addPlayerResource(g,"hides",rint(1,2));
             g.followers.push(s);
             g.map[y][x].entity = null;
             pushLog(g, `${s.name} joins you. (+${m} meat, +${h} hides)`,"good");
             closeModal(); render(); save();
           }},
           {label:"Trade meat for ammo", action:()=>{
-            if (g.resources.ammo<2){ pushLog(g,"Not enough ammo to trade.","warn"); closeModal(); return; }
-            g.resources.ammo -= 2; addResource(g,"meat",4);
+            if (!playerPay(g,{ammo:2})){ pushLog(g,"Not enough carried ammo to trade.","warn"); closeModal(); return; }
+            addPlayerResource(g,"meat",4);
             g.map[y][x].entity = null;
             pushLog(g,"You traded ammo for meat.","info");
             closeModal(); render(); save();
@@ -1077,16 +1152,16 @@ function openFriendlyDialog(g, ent, x, y){
         body:`<p>A mechanic offering parts and skill.</p>`,
         buttons:[
           {label:"Recruit (+parts, +tools)", primary:true, action:()=>{
-            addResource(g,"parts",rint(2,4));
-            addResource(g,"tools",rint(1,2));
+            addPlayerResource(g,"parts",rint(2,4));
+            addPlayerResource(g,"tools",rint(1,2));
             g.followers.push(s);
             g.map[y][x].entity = null;
             pushLog(g, `${s.name} joins your party.`, "good");
             closeModal(); render(); save();
           }},
           {label:"Trade parts for tools", action:()=>{
-            if (g.resources.metal<5){ pushLog(g,"Need 5 metal.","warn"); closeModal(); return; }
-            g.resources.metal -= 5; addResource(g,"tools",2); addResource(g,"parts",2);
+            if (!playerPay(g,{metal:5})){ pushLog(g,"Need 5 accessible metal.","warn"); closeModal(); return; }
+            addPlayerResource(g,"tools",2); addPlayerResource(g,"parts",2);
             g.map[y][x].entity = null;
             closeModal(); render(); save();
           }},
@@ -1105,7 +1180,7 @@ function openFriendlyDialog(g, ent, x, y){
         body:`<p>A scholar carrying books and notes.</p>`,
         buttons:[
           {label:"Recruit (+books, +knowledge)", primary:true, action:()=>{
-            addResource(g,"books",rint(1,3));
+            addPlayerResource(g,"books",rint(1,3));
             g.knowledge += rint(2,4);
             g.followers.push(s);
             g.map[y][x].entity = null;
@@ -1154,13 +1229,13 @@ function refreshMapDaily(g){
   for (let i=0; i<35; i++){
     const x = rint(0, MAP_W-1), y = rint(0, MAP_H-1);
     const t = g.map[y][x];
-    if (t.feature || t.entity) continue;
+    if (t.feature || t.entity || t.settlementBuilding || g.camps[x+","+y] || g.workSites[x+","+y]) continue;
     if (BIOMES[t.biome].blocks) continue;
     // pick a renewable feature compatible with this biome
     const candidates = [];
     for (const k in MAP_FEATURES){
       const f = MAP_FEATURES[k];
-      if (f.biomes.includes(t.biome) && !f.hidden && !f.rare && f.loot) candidates.push(k);
+      if (f.biomes.includes(t.biome) && f.renewable) candidates.push(k);
     }
     if (!candidates.length) continue;
     const fk = pick(candidates);
@@ -1171,7 +1246,7 @@ function refreshMapDaily(g){
     if (!chance(0.6)) continue;
     const x = rint(0, MAP_W-1), y = rint(0, MAP_H-1);
     const t = g.map[y][x];
-    if (t.feature || t.entity || BIOMES[t.biome].blocks) continue;
+    if (t.feature || t.entity || t.settlementBuilding || g.camps[x+","+y] || BIOMES[t.biome].blocks) continue;
     if (Math.abs(x-g.villageX)<=3 && Math.abs(y-g.villageY)<=3) continue;
     // mostly hostile to keep pressure
     const roll = rng();
@@ -1191,6 +1266,7 @@ function moveMapEntities(g){
     if (!entState || entState.type === "sage_npc") continue;
     const def = MAP_ENTITIES[entState.type];
     if (!def) continue;
+    if (def.nightOnly && !isNight(g)) continue;
     const dist = Math.abs(x-g.villageX) + Math.abs(y-g.villageY);
     if (def.hostile && dist <= 2){
       moves.push({x,y,attack:true, enemy:def.enemy});
@@ -1219,8 +1295,52 @@ function moveMapEntities(g){
     if (!inBounds(m.nx,m.ny)) continue;
     if (Math.abs(m.nx-g.villageX)<=1 && Math.abs(m.ny-g.villageY)<=1) continue;
     const to = g.map[m.ny][m.nx];
-    if (!to || to.entity || to.feature || BIOMES[to.biome].blocks) continue;
+    if (!to || to.entity || to.feature || to.settlementBuilding || (m.nx===g.playerX && m.ny===g.playerY) || BIOMES[to.biome].blocks) continue;
     to.entity = current;
     g.map[m.y][m.x].entity = null;
   }
+}
+
+function claimWorkSite(x,y){
+  const g=G;
+  if(!inBounds(x,y) || tileDistance(g,x,y)>1 || _combat || g.survivors[0].health<=0) return;
+  const type=g.map[y][x].feature?.type, key=x+","+y;
+  const kind=["iron_vein","mine_entrance"].includes(type)?"mine":["fish_pool","spring","stream","pond"].includes(type)?"fish":null;
+  if(!kind || g.workSites[key]) return;
+  if(!playerPay(g,{wood:2,rope:1})){ pushLog(g,"Marking a worker site needs 2 wood and 1 rope.","warn"); render(); return; }
+  g.workSites[key]={kind,remaining:kind==="mine"?40:1000000};
+  g.markers[key]=kind==="mine"?"Mining site":"Fishing site";
+  passMinutes(g,30); pushLog(g,"Site claimed. Assign workers from the Jobs tab.","good"); render(); save();
+}
+function establishOutpost(){
+  const g=G,key=positionKey(g);
+  if(atSettlement(g) || g.workSites[key] || _combat || g.survivors[0].health<=0) return;
+  if(!playerPay(g,{wood:6,rope:1})){ pushLog(g,"An outpost needs 6 wood and 1 rope.","warn"); render(); return; }
+  g.workSites[key]={kind:"outpost",remaining:1}; g.markers[key]="Supply outpost";
+  cacheAt(g); passMinutes(g,30);
+  pushLog(g,"Supply outpost established. Haulers can bring cached materials home.","good"); render(); save();
+}
+function searchNearby(){
+  const g=G,spots=[];
+  nearbyTile(g,1,(t,x,y)=>{
+    if(t.feature && !MAP_FEATURES[t.feature.type]?.hidden) spots.push({t,x,y});
+    return false;
+  });
+  if(!spots.length){ pushLog(g,"No visible feature in reach.","info"); render(); return; }
+  showModal({title:"Search nearby",body:"<p>Harvesting and searching take time and use carried tools. Minerals need a pickaxe; deep routes need light.</p>",buttons:[
+    ...spots.map(s=>({label:MAP_FEATURES[s.t.feature.type].name,action:()=>{closeModal();openTileActionDialog(g,s.x,s.y);}})),
+    {label:"Cancel",action:closeModal}
+  ]});
+}
+
+function previewRoute(x,y){
+  if(_combat || G.survivors[0].health<=0) return;
+  const route=findAutoPath(G,x,y);
+  if(!route.length){pushLog(G,"No known passable route there.","warn");render();return;}
+  const cost=route.reduce((sum,[rx,ry])=>{const c=travelCost(G,G.map[ry][rx].biome);sum.minutes+=c.minutes;sum.energy+=c.energy;return sum;},{minutes:0,energy:0});
+  const arrival=(360+gameMinutes(G)+cost.minutes)%1440;
+  const clock=String(Math.floor(arrival/60)).padStart(2,"0")+":"+String(arrival%60).padStart(2,"0");
+  showModal({title:"Travel route",body:`<p>${route.length} tiles · ${timeText(cost.minutes)} · ${fmt(cost.energy)} movement energy.</p><p>Estimated arrival ${clock}, before encounters, condition changes and normal phase decay.</p><p>${compassLabel(G)}</p>`,buttons:[
+    {label:"Walk route",primary:true,action:()=>{closeModal();startAutoWalk(x,y);}},{label:"Cancel",action:closeModal}
+  ]});
 }

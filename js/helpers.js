@@ -42,8 +42,8 @@ function foodStorageCap(g){
 
 function addResource(g, key, amount){
   const cap = (key==="food"||key==="crops"||key==="meat") ? foodStorageCap(g) : totalStorageCap(g);
-  const before = g.resources[key];
-  g.resources[key] = clamp(g.resources[key] + amount, 0, cap);
+  const before = g.resources[key] || 0;
+  g.resources[key] = amount>=0 ? before+Math.min(amount,Math.max(0,cap-before)) : Math.max(0,before+amount);
   return g.resources[key] - before;
 }
 
@@ -132,6 +132,7 @@ function jobAvailable(g, jobKey){
   if (jobKey==="none") return true;
   const j = JOBS[jobKey];
   if (!j) return false;
+  if (j.site && !Object.values(g.workSites || {}).some(s=>s.kind===j.site && s.remaining>0)) return false;
   if (j.building){
     if (!g.buildings[j.building]) return false;
     // Count workers vs slots
@@ -175,4 +176,146 @@ function settlementSafety(g){
   }
   s -= settlementDanger(g) * 0.6;
   return clamp(Math.round(s),0,100);
+}
+
+function atSettlement(g){ return inSettlementBuildArea(g, g.playerX, g.playerY); }
+function positionKey(g){ return g.playerX+","+g.playerY; }
+function gameMinutes(g){ return ((g.day-1)*4 + g.phase)*360 + (g.phaseMinutes || 0); }
+function isNight(g){ const h = (6 + gameMinutes(g)/60)%24; return h>=20 || h<6; }
+function nightMinutesDuring(g,minutes){
+  let clock=(360+gameMinutes(g))%1440,remaining=minutes,dark=0;
+  while(remaining>0){
+    const night=clock<360 || clock>=1200;
+    const boundary=clock<360?360:clock<1200?1200:1440;
+    const step=Math.min(remaining,boundary-clock);
+    if(night) dark+=step;
+    remaining-=step;clock=(clock+step)%1440;
+  }
+  return dark;
+}
+function timeText(minutes){ return minutes>=60 ? `${fmt(minutes/60)}h` : `${Math.round(minutes)}m`; }
+function resourceWeight(key){ return RESOURCE_WEIGHTS[key] ?? 0.3; }
+function equippedItem(g, slot){
+  return (g.inventory?.gear || []).find(i=>i.id===g.equipment?.[slot] && (i.durability==null || i.durability>0)) || null;
+}
+function carriedTool(g, kind){
+  return (g.inventory?.gear || []).filter(i=>ITEMS[i.type]?.kind===kind && (i.durability==null || i.durability>0))
+    .sort((a,b)=>(ITEMS[b.type].tier || ITEMS[b.type].vision || 1)-(ITEMS[a.type].tier || ITEMS[a.type].vision || 1))[0] || null;
+}
+function packCapacity(g){ return ITEMS[equippedItem(g,"pack")?.type]?.capacity || 30; }
+function packWeight(g){
+  return Object.entries(g.inventory?.resources || {}).reduce((sum,[k,v])=>sum+v*resourceWeight(k),0)
+    + (g.inventory?.gear || []).reduce((sum,i)=>sum+(ITEMS[i.type]?.weight || 0),0);
+}
+function playerAmount(g, key){
+  return (g.inventory?.resources[key] || 0) + (atSettlement(g) ? (g.resources[key] || 0) : 0);
+}
+function playerCanPay(g, cost){ return Object.entries(cost).every(([k,v])=>playerAmount(g,k)+1e-8>=v); }
+function playerPay(g, cost){
+  if (!playerCanPay(g,cost)) return false;
+  for (const [k,v] of Object.entries(cost)){
+    // Preserve packed rations when working at home.
+    const fromTown = atSettlement(g) ? Math.min(g.resources[k] || 0,v) : 0;
+    g.resources[k] = (g.resources[k] || 0)-fromTown;
+    const fromBag = v-fromTown;
+    g.inventory.resources[k] = Math.max(0,(g.inventory.resources[k] || 0)-fromBag);
+  }
+  return true;
+}
+function cacheAt(g, key=positionKey(g)){
+  if (!g.caches[key]) g.caches[key] = {resources:{},gear:[]};
+  return g.caches[key];
+}
+function addCarried(g, key, amount, leaveOverflow=true){
+  const space = Math.max(0,packCapacity(g)-packWeight(g));
+  const got = Math.min(amount,Math.floor((space/resourceWeight(key)+1e-8)*1000)/1000);
+  g.inventory.resources[key] = (g.inventory.resources[key] || 0)+got;
+  if (leaveOverflow && amount-got>0.001){
+    const cache = cacheAt(g);
+    cache.resources[key] = (cache.resources[key] || 0)+amount-got;
+    pushLog(g, `${fmt(amount-got)} ${RESOURCES[key].name} left in a cache here (pack full).`, "warn");
+  }
+  return got;
+}
+function addPlayerResource(g,key,amount){ return atSettlement(g) ? addResource(g,key,amount) : addCarried(g,key,amount); }
+function makeItem(g,type){
+  const item = {id:g.nextItemId++,type};
+  if (ITEMS[type].durability) item.durability = ITEMS[type].durability;
+  return item;
+}
+function giveItem(g,type,town=false){
+  const item = makeItem(g,type);
+  if (town) g.townGear.push(item);
+  else if (packWeight(g)+ITEMS[type].weight <= packCapacity(g)) g.inventory.gear.push(item);
+  else { cacheAt(g).gear.push(item); pushLog(g, `${ITEMS[type].name} left in the cache here.`, "warn"); }
+  return item;
+}
+function wearTool(g,item,amount=1){
+  if (!item || item.durability==null) return;
+  const before = item.durability;
+  item.durability = Math.max(0,before-amount);
+  if (before>0 && item.durability===0) pushLog(g, `${ITEMS[item.type].name} needs repair.`, "warn");
+}
+function actionMinutes(g,key){
+  let n = ACTION_COSTS[key] || 0;
+  const kind = ({chop_wood:"axe",mine:"pick",dig:"shovel"})[key];
+  const tool = kind && carriedTool(g,kind);
+  if (tool) n *= Math.max(0.45,1-(ITEMS[tool.type].tier || 1)*0.15);
+  return Math.round(n);
+}
+function hasStation(g, station, worker=false){
+  if (!station) return true;
+  if (station==="fire") return worker ? !!g.buildings.campfire?.count : !!nearbyFire(g);
+  const choices = station==="crafting_table" ? [station,"workshop"] : station==="furnace" ? [station,"forge"] : [station];
+  return (worker || atSettlement(g)) && choices.some(id=>g.buildings[id]?.count>0);
+}
+function recipeName(id){ const r = RECIPES[id]; return r.name || ITEMS[r.item]?.name || id; }
+function recipeBlocker(g,id,worker=false){
+  const r = RECIPES[id];
+  if (!r) return "Unknown recipe.";
+  if (!worker && (g.survivors[0].health<=0 || _combat)) return "Cannot craft during combat or while down.";
+  if (r.tech && !g.knownNodes[r.tech]) return "Research "+(KNOWLEDGE.find(n=>n.id===r.tech)?.name || r.tech)+".";
+  if (!hasStation(g,r.station,worker)) return "Need "+(BUILDINGS[r.station]?.name || "a nearby fire")+".";
+  if (!(worker ? canPay(g,r.cost) : playerCanPay(g,r.cost))) return "Missing ingredients.";
+  if (!worker && g.survivors[0].energy<1) return "Rest first.";
+  return "";
+}
+function recipeOutput(g,id,worker=false){
+  const r = RECIPES[id];
+  if (r.item) giveItem(g,r.item,worker);
+  for (const [k,v] of Object.entries(r.output || {})) worker ? addResource(g,k,v) : addPlayerResource(g,k,v);
+}
+function recipeMinutes(g,id){
+  const r=RECIPES[id];
+  return id==="planks" && carriedTool(g,"saw") ? Math.round(r.minutes*0.6) : r.minutes;
+}
+function resourceCap(g,key){ return ["food","crops","meat"].includes(key) ? foodStorageCap(g) : totalStorageCap(g); }
+function productionStock(g,key){ return Math.max(0,(g.resources[key] || 0)-(g.reserves?.[key] || 0)); }
+function productionWorkers(g,id){
+  const slots = (BUILDINGS[id]?.workers || 0)*(g.buildings[id]?.count || 0);
+  return (g.workerAssign[id] || []).filter(sid=>{
+    const s = survivorById(g,sid);
+    return s && !s.isPlayer && !s.isChild && s.health>0 && JOBS[g.jobs[sid]]?.building===id;
+  }).slice(0,slots);
+}
+function buildingMinutes(g,id){
+  const b = BUILDINGS[id];
+  let n = ["tent","crafting_table","garden","rain_barrel"].includes(id) ? 45 :
+    ["warehouse","town_hall","barracks","community_hall"].includes(id) ? 480 : b.effects?.housing ? 180 : 120;
+  if (carriedTool(g,"hammer")) n *= 0.8;
+  return Math.round(n);
+}
+function compassLabel(g){
+  if (!carriedTool(g,"compass")) return "Carry a compass to see your home bearing.";
+  const dx=g.villageX-g.playerX, dy=g.villageY-g.playerY;
+  if (!dx && !dy) return "Home: you are at the campfire.";
+  const dir = ["E","SE","S","SW","W","NW","N","NE"][(Math.round(Math.atan2(dy,dx)/(Math.PI/4))+8)%8];
+  const arrow = ["\u2192","\u2198","\u2193","\u2199","\u2190","\u2196","\u2191","\u2197"][(Math.round(Math.atan2(dy,dx)/(Math.PI/4))+8)%8];
+  return `Home ${arrow} ${dir} · ${Math.abs(dx)+Math.abs(dy)} tiles minimum`;
+}
+
+function workplaceRecipes(bid){
+  const stations={crafting_table:[null,"crafting_table"],workshop:[null,"crafting_table","workshop"],furnace:["furnace"],forge:["forge","furnace"],charcoal_kiln:["charcoal_kiln"],kitchen:["fire"],toolsmith:["forge","workshop"]};
+  if(!stations[bid]) return [];
+  return Object.keys(RECIPES).filter(id=>stations[bid].includes(RECIPES[id].station || null));
 }

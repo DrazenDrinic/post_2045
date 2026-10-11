@@ -2,33 +2,45 @@
 
 // ------------------------- ACTIONS ------------------------------
 
+let _activityEpoch = 0;
+
 function passPhase(g, phases=1, reason=""){
   passMinutes(g, phases * 360);
 }
 
 function passMinutes(g, minutes){
-  g.phaseMinutes = (g.phaseMinutes || 0) + Math.max(0, minutes || 0);
-  while (g.phaseMinutes >= 360){
-    g.phaseMinutes -= 360;
-    advanceOnePhase(g);
+  const player = g.survivors[0], epoch = _activityEpoch;
+  let remaining = Math.max(0,minutes || 0), elapsed = 0;
+  while (remaining>0 && player.health>0 && g.survivors[0]===player && _activityEpoch===epoch){
+    const step = Math.min(remaining,360-(g.phaseMinutes || 0));
+    const darkMinutes=nightMinutesDuring(g,step);
+    g.phaseMinutes = (g.phaseMinutes || 0)+step;
+    remaining -= step; elapsed += step;
+    for(const camp of Object.values(g.camps || {})) camp.fuel=Math.max(0,camp.fuel-step);
+    if (darkMinutes) wearTool(g,carriedTool(g,"light"),darkMinutes);
+    if (g.phaseMinutes>=360){ g.phaseMinutes = 0; advanceOnePhase(g); }
   }
+  return elapsed;
 }
 
 function advanceOnePhase(g){
+  const epoch=_activityEpoch;
   g.phase++;
   if (g.phase >= TICKS_PER_DAY){
     g.phase = 0;
     g.day++;
     onDayEnd(g);
   }
+  if(g.survivors[0].health<=0 || _activityEpoch!==epoch) return;
   applyTick(g);
+  if(g.survivors[0].health<=0 || _activityEpoch!==epoch) return;
   moveMapEntities(g);
 }
 
 function applyTick(g){
   // Decay needs per tick
   const player = g.survivors[0];
-  const night = g.phase===3;
+  const night = isNight(g);
   // Player
   decaySurvivor(g, player, /*isPlayer*/true, night);
   // Other survivors
@@ -39,6 +51,8 @@ function applyTick(g){
   // Building production (per tick)
   produceFromBuildings(g);
   produceFromJobs(g);
+  updateFarms(g);
+  produceOrders(g);
 
   // Auto-consumption: survivors eat & drink when needed at end of each tick
   autoConsume(g);
@@ -64,7 +78,7 @@ function decaySurvivor(g, s, isPlayer, night){
   if (s.warmth < 30) s.happiness = clamp(s.happiness - 1, 0, 100);
 
   // warmth bonus from campfire
-  const hasFire = (g.buildings.campfire?.count||0) > 0 && (g.resources.wood>0 || g.resources.charcoal>0);
+  const hasFire = isPlayer ? !!nearbyFire(g) : (g.buildings.campfire?.count||0)>0 && (g.resources.wood>0 || g.resources.charcoal>0);
   if (night && hasFire) s.warmth = clamp(s.warmth + 4, 0, 100);
 
   // health effects
@@ -79,7 +93,7 @@ function decaySurvivor(g, s, isPlayer, night){
   if (s.diseased) s.health = clamp(s.health - 2, 0, s.maxHealth);
 
   // morale tracked from happiness/safety
-  const safety = settlementSafety(g);
+  const safety = isPlayer && !atSettlement(g) ? Math.round(100-sleepConditions(g).incident*100) : settlementSafety(g);
   s.morale = clamp((s.happiness*0.5 + safety*0.5), 0, 100);
 
   // For player, mirror safety to a field
@@ -97,8 +111,13 @@ function produceFromBuildings(g){
   for (const id in g.buildings){
     const b = BUILDINGS[id]; if (!b) continue;
     const count = g.buildings[id].count;
-    const assigned = g.workerAssign[id] || [];
+    const assigned = productionWorkers(g,id).filter(sid=>!JOBS[g.jobs[sid]]?.direct);
     const eff = b.effects || {};
+    if (count<=0) continue;
+    if (g.orders?.[id] || eff.farm) continue;
+    const staffed = !b.workers || assigned.length>0;
+    if (eff.consume && !Object.entries(eff.consume).every(([r,v])=>productionStock(g,r)>=v*count/TICKS_PER_DAY)) continue;
+    if (eff.consume && !staffed) continue;
 
     if (eff.produce){
       for (const r in eff.produce){
@@ -111,20 +130,24 @@ function produceFromBuildings(g){
         addResource(g, r, (eff.produce_per_worker[r] * assigned.length * skillBoost)/TICKS_PER_DAY);
       }
     }
-    if (eff.consume){
+    if (eff.consume && staffed){
       for (const r in eff.consume){
         const need = (eff.consume[r] * count)/TICKS_PER_DAY;
-        if ((g.resources[r]||0) >= need) g.resources[r] -= need;
+        g.resources[r] -= need;
       }
     }
     if (eff.convert){
       const conv = eff.convert;
-      const max = (conv.perWorker||1) * assigned.length;
+      const max = (conv.perWorker||1) * assigned.length * workerSkillBonus(g,id,assigned);
       let runs = max / TICKS_PER_DAY;
       // limit by inputs
       for (const r in conv.from){
-        const possible = (g.resources[r]||0) / conv.from[r];
+        const possible = productionStock(g,r) / conv.from[r];
         runs = Math.min(runs, possible);
+      }
+      for (const r in conv.to){
+        const cap = ["food","meat","crops"].includes(r) ? foodStorageCap(g) : totalStorageCap(g);
+        runs = Math.min(runs, Math.max(0,cap-(g.resources[r]||0))/conv.to[r]);
       }
       if (runs > 0){
         for (const r in conv.from){ g.resources[r] -= conv.from[r] * runs; }
@@ -142,7 +165,7 @@ function produceFromBuildings(g){
       const power = eff.heal_per_worker * assigned.length / TICKS_PER_DAY;
       let pwr = power;
       for (const s of g.survivors){
-        if (s.health < s.maxHealth && pwr>0){
+        if (s.health>0 && (!s.isPlayer || atSettlement(g)) && s.health < s.maxHealth && pwr>0){
           const heal = Math.min(pwr, s.maxHealth-s.health);
           s.health += heal; pwr -= heal;
           if (s.injured && s.health > 60) s.injured = false;
@@ -151,7 +174,7 @@ function produceFromBuildings(g){
     }
     if (eff.disease_resist && assigned.length){
       for (const s of g.survivors){
-        if (s.diseased && chance(eff.disease_resist * assigned.length / TICKS_PER_DAY)){
+        if (s.health>0 && (!s.isPlayer || atSettlement(g)) && s.diseased && chance(eff.disease_resist * assigned.length / TICKS_PER_DAY)){
           s.diseased = false;
           s.health = clamp(s.health + 4, 0, s.maxHealth);
           pushLog(g, `${s.isPlayer?"You":s.name} recovered with help from ${b.name}.`, "good");
@@ -174,23 +197,23 @@ function produceFromBuildings(g){
         }
       }
     }
-    if (eff.happiness_all){
+    if (eff.happiness_all && staffed){
       const v = eff.happiness_all * count / TICKS_PER_DAY;
       for (const s of g.survivors) s.happiness = clamp(s.happiness + v, 0, 100);
     }
-    if (eff.morale_all){
+    if (eff.morale_all && staffed){
       const v = eff.morale_all * count / TICKS_PER_DAY;
       for (const s of g.survivors) s.morale = clamp(s.morale + v, 0, 100);
     }
-    if (eff.reputation){
+    if (eff.reputation && staffed){
       g.reputation += eff.reputation * count / TICKS_PER_DAY;
     }
-    if (eff.attract_chance){
+    if (eff.attract_chance && staffed){
       if (chance(eff.attract_chance * count / TICKS_PER_DAY)){
         spawnStranger(g);
       }
     }
-    if (eff.trade_chance){
+    if (eff.trade_chance && staffed){
       if (chance(eff.trade_chance * count / TICKS_PER_DAY)){
         traderArrives(g);
       }
@@ -210,16 +233,27 @@ function produceFromJobs(g){
     const jobKey = g.jobs[s.id] || s.job || "none";
     const job = JOBS[jobKey];
     if (!job || jobKey==="none") continue;
+    if (job.building && !productionWorkers(g,job.building).includes(s.id)) continue;
+    if (job.building && g.orders?.[job.building]) continue;
+    if (jobKey==="hauler"){ haulCaches(g,2); continue; }
+    if ((jobKey==="scout" || jobKey==="pathfinder") && chance(0.25)){
+      revealArea(g,clamp(g.villageX+rint(-24,24),0,MAP_W-1),clamp(g.villageY+rint(-18,18),0,MAP_H-1),3);
+    }
+    const site = job.site && Object.values(g.workSites || {}).find(v=>v.kind===job.site && v.remaining>0);
+    if (job.site && !site) continue;
     const boost = workerJobBonus(s, jobKey);
     let canWork = true;
     for (const r in job.consume || {}){
       const need = job.consume[r] / TICKS_PER_DAY;
-      if ((g.resources[r]||0) < need) canWork = false;
+      if ((g.resources[r]||0)-need < (g.reserves[r]||0)) canWork = false;
     }
     if (!canWork) continue;
+    const outputs=Object.entries(job.output || {}).filter(([r])=>RESOURCES[r] && (!job.building || job.direct));
+    if(outputs.length && outputs.some(([r,v])=>(g.resources[r]||0)+v*boost/TICKS_PER_DAY>resourceCap(g,r))) continue;
+    if (site) site.remaining = Math.max(0,site.remaining-1/TICKS_PER_DAY);
     for (const r in job.consume || {}) g.resources[r] -= job.consume[r] / TICKS_PER_DAY;
     for (const r in job.output || {}){
-      if (job.building && RESOURCES[r]) continue; // building production already handles resource outputs
+      if (job.building && RESOURCES[r] && !job.direct) continue;
       const amount = job.output[r] * boost / TICKS_PER_DAY;
       if (RESOURCES[r]) addResource(g, r, amount);
       else if (r === "knowledge") g.knowledge += amount;
@@ -291,6 +325,11 @@ function autoConsume(g){
   // Each tick, each survivor eats a little and drinks a little if available
   for (const s of g.survivors){
     if (s.health<=0) continue;
+    if (s.isPlayer){
+      if (s.hunger<55 && playerCanPay(g,{food:1})){ playerPay(g,{food:1}); s.hunger=clamp(s.hunger+30,0,100); }
+      if (s.thirst<55 && playerCanPay(g,{water:1})){ playerPay(g,{water:1}); s.thirst=clamp(s.thirst+30,0,100); }
+      continue;
+    }
     if (s.hunger < 70 && g.resources.food >= 1){
       g.resources.food -= 1; s.hunger = clamp(s.hunger + 25, 0, 100);
     } else if (s.hunger < 50 && g.resources.crops >= 2){
@@ -314,9 +353,11 @@ function autoConsume(g){
 }
 
 function onDayEnd(g){
+  g.weather = {type:pick(["clear","clear","clear","rain","cold"])};
   // age survivors, day survived counts
   for (const s of g.survivors){
     s.daysSurvived++;
+    if(s.health<=0) continue;
     s.age_ticks += 1;
     if (s.isChild){
       // growth boosted by school
@@ -333,8 +374,9 @@ function onDayEnd(g){
     }
     // disease cure chance from medicine
     if (s.diseased){
-      if (g.resources.medicine >= 1){
-        g.resources.medicine -= 1; s.diseased = false; s.health = clamp(s.health+10,0,s.maxHealth);
+      if (s.isPlayer ? playerCanPay(g,{medicine:1}) : g.resources.medicine >= 1){
+        s.isPlayer ? playerPay(g,{medicine:1}) : g.resources.medicine--;
+        s.diseased = false; s.health = clamp(s.health+10,0,s.maxHealth);
         pushLog(g, `${s.isPlayer?"You":s.name} recovered using medicine.`,"good");
       } else if (chance(0.1)) {
         s.diseased = false; pushLog(g, `${s.isPlayer?"You":s.name} recovered from illness.`,"good");
@@ -386,6 +428,8 @@ function removeDead(g){
         g.workerAssign[bid] = g.workerAssign[bid].filter(id=>id!==s.id);
       }
       if (s.isPlayer){
+        _activityEpoch++;
+        cancelAutoWalk();
         if (attemptPlayerRescue(g, s)) return;
         if (continueAsHeir(g, s)) return;
         // game over modal
@@ -419,6 +463,13 @@ function continueAsHeir(g, player){
   if (!heirs.length) return false;
   heirs.sort((a,b)=>(b.age||0)-(a.age||0));
   const heir = heirs[0];
+  if (!atSettlement(g)){
+    const cache = cacheAt(g);
+    for (const [k,v] of Object.entries(g.inventory.resources)) cache.resources[k]=(cache.resources[k]||0)+v;
+    cache.gear.push(...g.inventory.gear);
+    g.inventory = {resources:{},gear:[]}; g.equipment = {};
+  }
+  g.playerX = g.villageX; g.playerY = g.villageY;
   const oldIndex = g.survivors.indexOf(player);
   player.isPlayer = false;
   heir.isPlayer = true;
@@ -449,11 +500,11 @@ function continueAsHeir(g, player){
 
 function attemptPlayerRescue(g, player){
   if (player.lastRescueDay === g.day) return false;
-  const helpers = g.survivors.concat(g.followers || []).filter(s => s && !s.isPlayer && s.health > 0);
+  const helpers = (atSettlement(g) ? g.survivors : (g.followers || [])).filter(s => s && !s.isPlayer && s.health > 0);
   if (!helpers.length) return false;
   const medic = helpers.find(s => s.traits?.includes("medic") || s.skills?.medicine >= 4);
-  if (!medic && g.resources.medicine < 1) return false;
-  if (g.resources.medicine >= 1) g.resources.medicine -= 1;
+  if (!medic && !playerCanPay(g,{medicine:1})) return false;
+  if (playerCanPay(g,{medicine:1})) playerPay(g,{medicine:1});
   const healer = medic || pick(helpers);
   player.health = medic ? 35 : 22;
   player.energy = clamp(player.energy + 20, 0, 100);
@@ -475,7 +526,7 @@ function attemptPlayerRescue(g, player){
 
 // --- Player Actions ---
 
-const RECOVERY_ACTIONS = new Set(["rest","sleep","eat","drink","warm_fire"]);
+const RECOVERY_ACTIONS = new Set(["rest","sleep","eat","drink","warm_fire","bandage","pitch_tent","lay_bag","light_fire","lean_to"]);
 
 const WOOD_FEATURES = new Set(["dead_tree","fallen_log","pine_grove","ancient_oak"]);
 const FORAGE_FEATURES = new Set(["berry_bush","mushroom_patch","wild_herbs","apple_tree","edible_roots","wild_wheat","bird_nest","beehive","seed_pod"]);
@@ -489,7 +540,7 @@ function nearbySettlementBuilding(g, predicate){
       if (!inBounds(x,y)) continue;
       const id = g.map[y][x]?.settlementBuilding;
       const b = id && BUILDINGS[id];
-      if (b && predicate(b, id)) return {id, building:b};
+      if (b && g.buildings[id]?.count>0 && predicate(b, id)) return {id, building:b};
     }
   }
   return null;
@@ -521,10 +572,12 @@ function nearbyForageSource(g){
 }
 
 function nearbyRestSpot(g){
-  return nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.housing || !!b.effects?.warmth);
+  return g.camps?.[positionKey(g)] || nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.housing || !!b.effects?.warmth);
 }
 
 function nearbyFire(g){
+  if ((g.camps?.[positionKey(g)]?.fuel || 0)>0) return {id:"field_fire"};
+  if (g.resources.wood<1 && g.resources.charcoal<1) return null;
   return nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.warmth || !!b.effects?.cook);
 }
 
@@ -546,13 +599,16 @@ function findHuntTarget(g){
 function huntTarget(target){
   const g = G;
   const p = g.survivors[0];
-  if (!target || !target.tile?.entity) return false;
-  if (g.resources.arrows < 1){ pushLog(g, "Need arrows.", "warn"); render(); return false; }
-  g.resources.arrows -= 1;
+  if (!target || !target.tile?.entity || p.health<=0 || _combat) return false;
+  if (tileDistance(g,target.x,target.y)>3 || tileDistance(g,target.x,target.y)<1 || !computeVisible(g)[target.x+","+target.y]) return false;
+  if (!carriedTool(g,"bow") || !playerCanPay(g,{arrows:1})){ pushLog(g, "Carry a bow and arrows.", "warn"); render(); return false; }
+  if (p.energy<4) return false;
+  playerPay(g,{arrows:1}); wearTool(g,carriedTool(g,"bow"));
   const hitChance = clamp(0.45 + p.skills.combat*0.04 + (p.traits.includes("hunter")?0.12:0), 0.25, 0.88);
-  p.energy -= 7; p.hunger -= 2; p.thirst -= 2;
+  p.energy -= 4; p.hunger = clamp(p.hunger-1,0,100); p.thirst = clamp(p.thirst-1,0,100);
   if (chance(hitChance)){
-    for (const r in target.entity.loot || {}) addResource(g, r, rint(target.entity.loot[r][0], target.entity.loot[r][1]));
+    for (const r in target.entity.loot || {}) addPlayerResource(g, r, rint(target.entity.loot[r][0], target.entity.loot[r][1])+(carriedTool(g,"knife")?1:0));
+    wearTool(g,carriedTool(g,"knife"));
     target.tile.entity = null;
     pushLog(g, `Your arrow drops a ${target.entity.name.toLowerCase()}. You dress the kill.`, "good");
   } else {
@@ -565,7 +621,8 @@ function huntTarget(target){
     }
     moveAnimalAway(g, target.x, target.y) || (target.tile.entity = null);
   }
-  passPhase(g,1);
+  passMinutes(g,ACTION_COSTS.hunt);
+  if (p.health<=0) removeDead(g);
   render(); save();
   return true;
 }
@@ -573,23 +630,34 @@ function huntTarget(target){
 function quickActionBlocker(g, actionKey){
   const p = g.survivors[0];
   if (!p || p.health<=0) return "You are down.";
-  if (p.energy < 5 && !RECOVERY_ACTIONS.has(actionKey)) return "Too exhausted.";
+  if (_combat) return "Resolve combat first.";
+  if (p.energy < (ACTION_ENERGY[actionKey] || 0) && !RECOVERY_ACTIONS.has(actionKey)) return "Too exhausted.";
+  const recipes = {boil_water:"clean_water",purify_water:"filtered_water",cook:playerAmount(g,"meat")>=1?"meal":"vegetable_meal",craft_arrows:"arrows"};
+  if (recipes[actionKey]) return recipeBlocker(g,recipes[actionKey]);
   switch(actionKey){
     case "chop_wood": return nearbyWoodSource(g) ? "" : "Stand on or next to forest, deep forest, or wood.";
     case "gather": return nearbyForageSource(g) ? "" : "Stand on or next to forageable land or plants.";
     case "fetch_water": return nearbyWaterSource(g) ? "" : "Stand on or next to water.";
-    case "boil_water": return canPay(g,{dirty_water:2, wood:1}) ? (nearbyFire(g) ? "" : "Need a nearby fire.") : "Need 2 dirty water and 1 wood.";
-    case "purify_water": return canPay(g,{dirty_water:2, charcoal:1}) ? "" : "Need 2 dirty water and 1 charcoal.";
-    case "cook": return canPay(g, g.resources.meat>=1 ? {meat:1, wood:1} : {crops:2, wood:1}) ? (nearbyFire(g) ? "" : "Need a nearby fire.") : "Need meat or crops, plus wood.";
-    case "eat": return g.resources.food>=1 ? "" : "No food.";
-    case "drink": return (g.resources.water>=1 || g.resources.dirty_water>=1) ? "" : "No water.";
-    case "rest": return nearbyRestSpot(g) ? "" : "Rest near housing, shelter, or campfire.";
-    case "warm_fire": return nearbyFire(g) ? ((g.resources.wood>=1 || g.resources.charcoal>=1) ? "" : "Need wood or charcoal.") : "Need a nearby fire.";
+    case "eat": return playerAmount(g,"food")>=1 ? "" : "No accessible food. Pack supplies at home.";
+    case "drink": return playerAmount(g,"water")>=1 || playerAmount(g,"dirty_water")>=1 ? "" : "No carried water.";
+    case "rest": return "";
+    case "warm_fire": return nearbyFire(g) ? "" : "Light a fire or stand near the town campfire.";
     case "gather_spirits": return nearbyRestSpot(g) ? "" : "Gather near camp or housing.";
-    case "craft_arrows": return canPay(g,{wood:1, bones:1}) ? "" : "Need 1 wood and 1 bone.";
-    case "hunt": return g.resources.arrows>=1 ? (findHuntTarget(g) ? "" : "Need a visible animal 1-3 tiles away.") : "Need arrows.";
-    case "study": return g.resources.books>=1 ? "" : "Need a book.";
-    case "train": return g.buildings.training_yard ? "" : "Need a training yard.";
+    case "hunt": return carriedTool(g,"bow") && playerAmount(g,"arrows")>=1 ? (findHuntTarget(g) ? "" : "Need a visible animal 1-3 tiles away.") : "Carry a bow and arrows.";
+    case "study": return playerAmount(g,"books")>=1 ? "" : "Need a book.";
+    case "train": return atSettlement(g) && g.buildings.training_yard?.count ? "" : "Need a training yard at home.";
+    case "gather_fiber": return nearbyForageSource(g) ? "" : "Find plants or reeds.";
+    case "gather_stone": return "";
+    case "mine": return carriedTool(g,"pick") ? (nearbyTile(g,1,t=>["iron_vein","stone_outcrop","boulder_pile","coal_seam"].includes(t.feature?.type)) ? "" : "Stand near a mineral deposit.") : "Carry a working pickaxe.";
+    case "dig": return carriedTool(g,"shovel") ? "" : "Carry a shovel.";
+    case "fish": return carriedTool(g,"rod") && nearbyWaterSource(g) ? "" : "Need a fishing rod and nearby water.";
+    case "bandage": return playerAmount(g,"bandages")>=1 ? "" : "Craft bandages first.";
+    case "pitch_tent": return carriedTool(g,"tent") ? "" : "Carry a portable tent.";
+    case "lay_bag": return carriedTool(g,"bedroll") ? "" : "Carry a sleeping bag.";
+    case "light_fire": return playerCanPay(g,{wood:1}) ? "" : "Need 1 accessible wood.";
+    case "pack_camp": return g.camps?.[positionKey(g)] ? "" : "No camp here.";
+    case "lean_to": return playerCanPay(g,{wood:4,fiber:4}) ? "" : "Need 4 wood and 4 fiber.";
+    case "survey": return carriedTool(g,"survey") ? "" : "Carry binoculars.";
   }
   return "";
 }
@@ -605,154 +673,86 @@ function restEnergyBonus(g){
 function playerAction(actionKey){
   const g = G;
   const p = g.survivors[0];
-  if (p.health<=0) return;
-  if (p.energy < 5 && !RECOVERY_ACTIONS.has(actionKey)){
-    pushLog(g, "You are too exhausted. Rest or sleep first.","warn");
-    render(); return;
-  }
   const blocker = quickActionBlocker(g, actionKey);
   if (blocker){ pushLog(g, blocker, "warn"); render(); return; }
+  const recipe = {boil_water:"clean_water",purify_water:"filtered_water",cook:playerAmount(g,"meat")>=1?"meal":"vegetable_meal",craft_arrows:"arrows"}[actionKey];
+  if (recipe){ craftRecipe(recipe); return; }
+  if (actionKey==="sleep"){ openSleepDialog(); return; }
+  if (actionKey==="hunt"){ huntTarget(findHuntTarget(g)); return; }
+  if (["pitch_tent","lay_bag","light_fire","pack_camp","lean_to"].includes(actionKey)){ campAction(actionKey); return; }
+  const minutes = actionMinutes(g,actionKey);
+  const epoch = _activityEpoch;
+  let energy = 0;
   switch(actionKey){
     case "chop_wood":{
-      const amount = rint(3,6) + (p.traits.includes("hardworking")?1:0);
-      addResource(g, "wood", amount);
-      p.energy -= 5; p.hunger -= 2; p.thirst -= 2;
-      pushLog(g, `You chopped wood. (+${amount} wood)`, "good");
-      passPhase(g,1); break;
+      const axe = carriedTool(g,"axe");
+      const amount = rint(3,5)+(axe ? ITEMS[axe.type].tier*2 : 0);
+      addPlayerResource(g,"wood",amount); wearTool(g,axe); energy=3;
+      pushLog(g,`Chopped ${amount} wood${axe?" with "+ITEMS[axe.type].name:" by gathering loose timber"}.`,"good"); break;
     }
     case "gather":{
-      const food = rint(1,3), herbs = rint(0,2), seeds = rint(0,2);
-      addResource(g,"food",food); addResource(g,"herbs",herbs); addResource(g,"seeds",seeds);
-      p.energy -= 4; p.hunger -= 2; p.thirst -= 2;
-      pushLog(g,`You foraged. (+${food} food, +${herbs} herbs, +${seeds} seeds)`,"good");
-      passPhase(g,1); break;
+      const food=rint(1,3), herbs=rint(0,2), seeds=rint(0,2);
+      addPlayerResource(g,"food",food); addPlayerResource(g,"herbs",herbs); addPlayerResource(g,"seeds",seeds);
+      energy=2; pushLog(g,`Foraged ${food} food, ${herbs} herbs and ${seeds} seeds.`,"good"); break;
     }
     case "fetch_water":{
-      const source = nearbyWaterSource(g);
-      const clean = source && ["spring","old_well","hot_spring"].includes(source.tile.feature?.type);
-      addResource(g, clean ? "water" : "dirty_water", 1);
-      p.energy -= 1; p.thirst -= 1;
-      pushLog(g, clean ? "You fetched clean water. (+1 water)" : "You fetched water. (+1 dirty water)", "good");
-      passMinutes(g,60); break;
-    }
-    case "boil_water":{
-      const cost = {dirty_water:2, wood:1};
-      if (!canPay(g,cost)){ pushLog(g,"Need 2 dirty water and 1 wood.","warn"); render(); return; }
-      pay(g,cost); addResource(g,"water",2);
-      p.energy -= 2;
-      pushLog(g,"You boiled water. (+2 clean water)","good");
-      passPhase(g,1); break;
-    }
-    case "purify_water":{
-      const cost = {dirty_water:2, charcoal:1};
-      if (!canPay(g,cost)){ pushLog(g,"Need 2 dirty water and 1 charcoal.","warn"); render(); return; }
-      pay(g,cost); addResource(g,"water",2);
-      p.energy -= 1;
-      pushLog(g,"You filtered dirty water through charcoal. (+2 clean water)","good");
-      passPhase(g,1); break;
-    }
-    case "cook":{
-      const cost = (g.resources.meat>=1?{meat:1, wood:1}:{crops:2, wood:1});
-      if (!canPay(g,cost)){ pushLog(g,"Need either 1 meat or 2 crops, and 1 wood.","warn"); render(); return; }
-      pay(g,cost); addResource(g,"food",3);
-      p.energy -= 2;
-      pushLog(g,"You cooked a meal. (+3 food)","good");
-      passPhase(g,1); break;
+      fetchWaterFromTile(g,nearbyWaterSource(g).tile); return;
     }
     case "eat":{
-      if (g.resources.food<1){ pushLog(g,"No food to eat.","warn"); render(); return; }
-      g.resources.food -= 1; p.hunger = clamp(p.hunger+30,0,100);
-      pushLog(g,"You ate a small meal.","good"); render(); save(); return;
+      playerPay(g,{food:1}); p.hunger=clamp(p.hunger+30,0,100); pushLog(g,"You ate a meal.","good"); break;
     }
     case "drink":{
-      if (g.resources.water>=1){ g.resources.water -= 1; p.thirst = clamp(p.thirst+30,0,100); pushLog(g,"You drank clean water.","good"); }
-      else if (g.resources.dirty_water>=1){ g.resources.dirty_water -= 1; p.thirst = clamp(p.thirst+20,0,100); if (chance(0.15)){ p.diseased = true; pushLog(g,"You drank dirty water and fell ill.","bad"); } else pushLog(g,"You drank dirty water uneasily.","warn");}
-      else { pushLog(g,"No water available.","warn"); }
-      render(); save(); return;
+      const clean=playerAmount(g,"water")>=1;
+      playerPay(g,{[clean?"water":"dirty_water"]:1}); p.thirst=clamp(p.thirst+(clean?30:20),0,100);
+      if (!clean && chance(0.15)) p.diseased=true;
+      pushLog(g,clean?"You drank clean water.":"You drank untreated water; illness is possible.",clean?"good":"warn"); break;
     }
     case "rest":{
-      // short rest restores 25% energy over 2 hours
-      const gain = 25;
-      p.energy = clamp(p.energy + gain, 0, 100);
-      pushLog(g, `You rested for 2 hours. (+${gain} energy)`, "info");
-      passMinutes(g,120); break;
+      sleepFor(30,true); return;
     }
     case "warm_fire":{
-      const nearbyFire = nearbySettlementBuilding(g, (b,id) => id==="campfire" || !!b.effects?.warmth);
-      const hasCampfire = (g.buildings.campfire?.count||0) > 0;
-      if (!nearbyFire && !hasCampfire){ pushLog(g,"You need a campfire or warm building first.","warn"); render(); return; }
-      const fuel = g.resources.charcoal >= 1 ? "charcoal" : (g.resources.wood >= 1 ? "wood" : null);
-      if (!fuel){ pushLog(g,"Need 1 wood or 1 charcoal to feed the fire.","warn"); render(); return; }
-      g.resources[fuel] -= 1;
-      p.warmth = clamp(p.warmth + 35, 0, 100);
-      p.happiness = clamp(p.happiness + 3, 0, 100);
-      p.energy = clamp(p.energy + 5, 0, 100);
-      pushLog(g, `You fed the fire with ${RESOURCES[fuel].name.toLowerCase()} and warmed yourself.`, "good");
-      passPhase(g,1); break;
+      p.warmth=clamp(p.warmth+30,0,100); pushLog(g,"You warm yourself by the fire.","good"); break;
     }
     case "gather_spirits":{
-      const hasPeople = g.survivors.filter(s=>s.health>0).length > 1;
-      const safety = settlementSafety(g);
-      const happyGain = hasPeople ? 8 : 4;
-      const moraleGain = hasPeople ? 6 : 3;
-      p.energy -= 3;
-      for (const s of g.survivors){
-        if (!s || s.health<=0) continue;
-        s.happiness = clamp(s.happiness + happyGain, 0, 100);
-        s.morale = clamp(s.morale + moraleGain + Math.floor(safety/25), 0, 100);
-      }
-      pushLog(g, hasPeople ? "You shared stories and steadied everyone's nerves." : "You took a quiet moment to steady yourself.", "good");
-      passPhase(g,1); break;
-    }
-    case "craft_arrows":{
-      pay(g,{wood:1, bones:1});
-      const made = rint(3,5);
-      addResource(g,"arrows",made);
-      p.energy -= 2;
-      pushLog(g, `You carved arrow shafts and bone tips. (+${made} arrows)`, "good");
-      passPhase(g,1); break;
-    }
-    case "hunt":{
-      const target = findHuntTarget(g);
-      huntTarget(target); return;
-    }
-    case "sleep":{
-      // sleep 8 hours
-      passMinutes(g, 480);
-      p.energy = 100;
-      p.hunger = clamp(p.hunger - 6, 0, 100);
-      p.thirst = clamp(p.thirst - 6, 0, 100);
-      pushLog(g, "You slept 8 hours. (full energy)", "info");
-      break;
+      for (const s of atSettlement(g)?g.survivors:[p,...g.followers]) s.happiness=clamp(s.happiness+5,0,100);
+      energy=2; pushLog(g,"Stories around camp lift your spirits.","good"); break;
     }
     case "train":{
-      // train combat
-      if (!g.buildings.training_yard){ pushLog(g,"No training yard available.","warn"); render(); return; }
-      p.skills.combat += 1;
-      p.energy -= 8; p.hunger -= 3;
-      pushLog(g,"You trained at the yard. (+combat)","good");
-      passPhase(g,1); break;
+      p.skills.combat=Math.min(20,p.skills.combat+0.5); energy=5; pushLog(g,"Combat practice improves your skill.","good"); break;
     }
     case "study":{
-      if (g.resources.books < 1){ pushLog(g,"Need a book to study.","warn"); render(); return; }
-      g.resources.books -= 1;
-      const kp = rint(2,5);
-      g.knowledge += kp;
-      p.energy -= 3;
-      pushLog(g,`You studied a book. (+${kp} knowledge)`,"good");
-      passPhase(g,1); break;
+      playerPay(g,{books:1}); const kp=rint(2,5); g.knowledge+=kp; energy=2; pushLog(g,`Studied a book: +${kp} knowledge.`,"good"); break;
     }
+    case "gather_fiber": addPlayerResource(g,"fiber",rint(3,5)); energy=2; pushLog(g,"Gathered plant fiber for cordage.","good"); break;
+    case "gather_stone": addPlayerResource(g,"stone",rint(2,3)); energy=2; pushLog(g,"Collected loose stone.","good"); break;
+    case "mine": { const node=nearbyTile(g,1,t=>["iron_vein","stone_outcrop","boulder_pile","coal_seam"].includes(t.feature?.type)); handleFeature(g,node.tile,node.x,node.y); render(); save(); return; }
+    case "dig": addPlayerResource(g,"sand",3); addPlayerResource(g,"clay",2); wearTool(g,carriedTool(g,"shovel")); energy=3; pushLog(g,"Dug sand and clay.","good"); break;
+    case "fish": addPlayerResource(g,"meat",rint(1,3)); wearTool(g,carriedTool(g,"rod")); energy=2; pushLog(g,"Caught fish for the cooking pot.","good"); break;
+    case "bandage": playerPay(g,{bandages:1}); p.health=clamp(p.health+15,0,p.maxHealth); p.injured=false; pushLog(g,"Clean bandages treat your wounds.","good"); break;
+    case "survey": revealArea(g,g.playerX,g.playerY,10); g.knowledge+=0.2; pushLog(g,"You survey the surrounding land.","info"); break;
+    default: return;
   }
+  p.energy=clamp(p.energy-energy,0,100);
+  if (_activityEpoch===epoch) passMinutes(g,minutes);
   render(); save();
 }
 
 function explore(locKey){
   const g = G;
   const p = g.survivors[0];
-  if (p.health<=0) return;
+  if (p.health<=0 || _combat) return;
   const loc = LOCATIONS[locKey]; if (!loc) return;
+  if (!atSettlement(g)){ pushLog(g,"Quick Scout departs from the settlement. Search local features while away.","warn"); render(); return; }
+  if ((g.scoutCooldowns[locKey] || 0)>gameMinutes(g)){ pushLog(g,"That route has been searched recently. Try another destination.","warn"); render(); return; }
+  if ((g.inventory.resources.food||0)<1 || (g.inventory.resources.water||0)<1){ pushLog(g,"Pack 1 food and 1 clean water for this trip.","warn"); render(); return; }
   if (p.energy < loc.energy){ pushLog(g,`Too exhausted to explore ${loc.name}.`,"warn"); render(); return; }
   pushLog(g, `You set out to ${loc.name}.`,"info");
+  g.inventory.resources.food--; g.inventory.resources.water--;
+  g.scoutCooldowns[locKey]=gameMinutes(g)+720;
+  p.energy=clamp(p.energy-loc.energy,0,100);
+  const epoch=_activityEpoch;
+  passMinutes(g,loc.minutes);
+  if(p.health<=0 || g.survivors[0]!==p || epoch!==_activityEpoch){ render(); save(); return; }
 
   // enemy encounter chance scales with danger
   if (chance(0.18 + loc.danger * 0.07)){
@@ -770,7 +770,7 @@ function doScavenge(g, loc, locKey, p){
     const [lo, hi] = loc.loot[r];
     const amt = rint(lo, hi);
     if (amt>0){
-      const got = addResource(g, r, amt);
+      const got = addCarried(g, r, amt);
       if (got>0) gained[r] = (gained[r]||0) + got;
     }
   }
@@ -783,15 +783,303 @@ function doScavenge(g, loc, locKey, p){
     if (chance(0.2)){ const k = rint(1,3); g.knowledge += k; pushLog(g, `You found notes worth ${k} knowledge.`, "good"); }
   }
 
-  p.energy -= loc.energy;
-  p.hunger -= 6; p.thirst -= 6;
-  passPhase(g, loc.time);
-
   const gainedStr = Object.entries(gained).map(([k,v])=>`+${fmt(v)} ${RESOURCES[k].name}`).join(", ");
   if (gainedStr) pushLog(g, `You returned from ${loc.name}: ${gainedStr}.`, "good");
   else pushLog(g, `You returned from ${loc.name} empty-handed.`, "warn");
 
   render(); save();
+}
+
+// --- Inventory, camp and production ---
+
+function transferResource(key,amount,direction){
+  const g=G;
+  if (!RESOURCES[key] || !Number.isFinite(amount) || amount<=0 || g.survivors[0].health<=0 || _combat) return;
+  const town = atSettlement(g);
+  const cache = g.caches[positionKey(g)];
+  const source = direction==="take" ? (town?g.resources:cache?.resources) : g.inventory.resources;
+  if (!source) return;
+  amount=Math.min(amount,source[key] || 0);
+  if (direction==="take") source[key]-=addCarried(g,key,amount,false);
+  else if (direction==="deposit" && town) source[key]-=addResource(g,key,amount);
+  else if (direction==="drop"){
+    const dest=cacheAt(g).resources; dest[key]=(dest[key]||0)+amount; source[key]-=amount;
+  }
+  render(); save();
+}
+function takeCacheResource(key,amount){
+  const c=G.caches[positionKey(G)];
+  if (!c || !RESOURCES[key] || _combat || G.survivors[0].health<=0) return;
+  c.resources[key]-=addCarried(G,key,Math.min(c.resources[key]||0,amount),false);
+  render(); save();
+}
+function moveGear(id,sourceName){
+  const g=G;
+  if (_combat || g.survivors[0].health<=0) return;
+  const source=sourceName==="town" ? (atSettlement(g)?g.townGear:[]) : sourceName==="cache" ? (g.caches[positionKey(g)]?.gear || []) : g.inventory.gear;
+  const index=source.findIndex(i=>i.id===id); if(index<0) return;
+  const item=source[index];
+  if (sourceName==="pack"){
+    if (Object.values(g.equipment).includes(id)){ pushLog(g,"Unequip this item first.","warn"); render(); return; }
+    (atSettlement(g)?g.townGear:cacheAt(g).gear).push(item);
+  } else {
+    if (packWeight(g)+ITEMS[item.type].weight>packCapacity(g)){ pushLog(g,"Not enough pack space.","warn"); render(); return; }
+    g.inventory.gear.push(item);
+  }
+  source.splice(index,1); render(); save();
+}
+function equipGear(id){
+  const g=G, item=g.inventory.gear.find(i=>i.id===id), def=ITEMS[item?.type];
+  if (!def?.slot || _combat || g.survivors[0].health<=0) return;
+  const removing=g.equipment[def.slot]===id;
+  if (def.slot==="pack" && packWeight(g)>(removing?30:def.capacity)){
+    pushLog(g,"Unload supplies before changing to a smaller pack.","warn"); render(); return;
+  }
+  if(removing) delete g.equipment[def.slot]; else g.equipment[def.slot]=id;
+  render(); save();
+}
+function repairGear(id){
+  const g=G, item=g.inventory.gear.find(i=>i.id===id);
+  if (!item || item.durability==null || _combat || g.survivors[0].health<=0) return;
+  const def=ITEMS[item.type];
+  if(item.durability>=def.durability) return;
+  const cost=def.kind==="light" ? {[item.type==="lantern"?"oil":"wood"]:1} : {repair_kits:1};
+  if (!playerPay(g,cost)){ pushLog(g,"Need "+costString(cost)+".","warn"); render(); return; }
+  item.durability=def.durability;
+  passMinutes(g,10); pushLog(g,`${def.name} restored.`,"good"); render(); save();
+}
+function packPreset(name){
+  const g=G;
+  if(!atSettlement(g) || _combat || g.survivors[0].health<=0) return;
+  const supplies=name==="Overnight" ? {food:6,water:6,wood:4,bandages:2,arrows:10} : name==="Mining" ? {food:4,water:4,wood:2,bandages:2} : {food:3,water:3,bandages:1,arrows:5};
+  const missing=[];
+  for(const [k,n] of Object.entries(supplies)){
+    const need=Math.max(0,n-(g.inventory.resources[k]||0));
+    g.resources[k]-=addCarried(g,k,Math.min(need,g.resources[k]||0),false);
+    if((g.inventory.resources[k]||0)<n) missing.push(RESOURCES[k].name);
+  }
+  pushLog(g,missing.length?`Packed what fits. Still missing: ${missing.join(", ")}.`:`${name} supplies packed.`,missing.length?"warn":"good");
+  render(); save();
+}
+function depositMaterials(){
+  if(!atSettlement(G) || _combat || G.survivors[0].health<=0) return;
+  const keep=new Set(["food","water","medicine","bandages","arrows","ammo","repair_kits"]);
+  for(const k of RES_KEYS) if(!keep.has(k)) G.inventory.resources[k]-=addResource(G,k,G.inventory.resources[k]||0);
+  render(); save();
+}
+function craftRecipe(id,batches=1){
+  const g=G, r=RECIPES[id]; if(!r) return;
+  const n=clamp(Math.floor(Number(batches)||1),1,10);
+  const p=g.survivors[0], epoch=_activityEpoch;
+  let made=0;
+  for(let i=0;i<n;i++){
+    const blocker=recipeBlocker(g,id);
+    if(blocker){ pushLog(g,blocker,"warn"); break; }
+    if(!atSettlement(g)){
+      const outputWeight=r.item?ITEMS[r.item].weight:Object.entries(r.output||{}).reduce((a,[k,v])=>a+v*resourceWeight(k),0);
+      const inputWeight=Object.entries(r.cost).reduce((a,[k,v])=>a+Math.min(v,g.inventory.resources[k]||0)*resourceWeight(k),0);
+      if(packWeight(g)-inputWeight+outputWeight>packCapacity(g)){ pushLog(g,"Free pack space before crafting.","warn"); break; }
+    }
+    playerPay(g,r.cost); p.energy=clamp(p.energy-1,0,100);
+    const minutes=recipeMinutes(g,id), spent=passMinutes(g,minutes);
+    if(spent<minutes || _activityEpoch!==epoch || g.survivors[0]!==p || p.health<=0){ pushLog(g,"Crafting interrupted; the current materials were spent.","warn"); break; }
+    if(id==="planks") wearTool(g,carriedTool(g,"saw"));
+    recipeOutput(g,id); made++;
+    if(document.getElementById("modal-root").firstChild) break;
+  }
+  if(made) pushLog(g,`Crafted ${recipeName(id)} x${made}.`+(r.item?" Check Inventory to equip or take it.":""),"good");
+  render(); save();
+}
+function campAction(action){
+  const g=G, key=positionKey(g), p=g.survivors[0];
+  const blocked=quickActionBlocker(g,action);
+  if(blocked){ pushLog(g,blocked,"warn"); render(); return; }
+  const camp=g.camps[key] || (g.camps[key]={gear:[],fuel:0,leanTo:false});
+  if(action==="pitch_tent" || action==="lay_bag"){
+    const kind=action==="pitch_tent"?"tent":"bedroll";
+    if(camp.gear.some(i=>ITEMS[i.type].kind===kind)){ pushLog(g,"Already deployed here.","warn"); render(); return; }
+    const item=carriedTool(g,kind); if(!item) return;
+    g.inventory.gear.splice(g.inventory.gear.indexOf(item),1); camp.gear.push(item);
+    pushLog(g,`${ITEMS[item.type].name} deployed.`,"good");
+  } else if(action==="light_fire"){
+    if(!playerPay(g,{wood:1})) return;
+    camp.fuel+=240; pushLog(g,"Campfire fueled for another 4 hours.","good");
+  } else if(action==="lean_to"){
+    if(camp.leanTo){ pushLog(g,"A lean-to already stands here.","info"); render(); return; }
+    if(!playerPay(g,{wood:4,fiber:4})) return;
+    camp.leanTo=true; pushLog(g,"Built an improvised lean-to. It stays on this tile.","good");
+  } else if(action==="pack_camp"){
+    const weight=camp.gear.reduce((s,i)=>s+ITEMS[i.type].weight,0);
+    if(packWeight(g)+weight>packCapacity(g)){ pushLog(g,"Free pack space to carry your camping equipment.","warn"); render(); return; }
+    g.inventory.gear.push(...camp.gear); camp.gear=[]; camp.fuel=0;
+    if(!camp.leanTo) delete g.camps[key];
+    pushLog(g,"Camping gear packed; fire extinguished.","info");
+  }
+  p.energy=clamp(p.energy-1,0,100); passMinutes(g,ACTION_COSTS[action]); render(); save();
+}
+function sleepConditions(g){
+  const camp=g.camps?.[positionKey(g)], biome=BIOMES[g.map[g.playerY][g.playerX].biome];
+  const home=nearbySettlementBuilding(g,b=>!!b.effects?.housing);
+  const tent=camp?.gear.some(i=>ITEMS[i.type].kind==="tent");
+  const bag=camp?.gear.some(i=>ITEMS[i.type].kind==="bedroll");
+  const coat=ITEMS[equippedItem(g,"clothing")?.type] || {};
+  const roof=!!(home || tent || camp?.leanTo), fire=!!nearbyFire(g);
+  const rain=g.weather?.type==="rain" && !roof && !coat.rainproof;
+  const cold=biome.cold || g.weather?.type==="cold";
+  const insulation=(home?8:tent?3:camp?.leanTo?1:0)+(bag?3:0)+(fire?4:0)+(coat.insulation||0);
+  const loss=Math.max(0,(isNight(g)?5:2)+(cold?6:0)+(rain?4:0)-insulation);
+  let threats=0;
+  nearbyTile(g,3,t=>{ if(MAP_ENTITIES[t.entity?.type]?.hostile) threats++; return false; });
+  const watch=g.followers.some(s=>s.health>30 && !s.isChild);
+  const incident=home?0:clamp(0.30+threats*0.06+(biome.dark?0.1:0)+(isNight(g)?0.05:0)-(tent?0.12:0)-(fire?0.1:0)-(watch?0.06:0),0.04,0.7);
+  const recovery=home?14:tent&&bag?12:bag?9:roof?7:4;
+  return {roof,fire,loss,incident,recovery,watch,radiation:!!biome.radiation,
+    label:home?home.building.name:tent?"Portable tent"+(bag?" + sleeping bag":""):camp?.leanTo?"Lean-to"+(bag?" + sleeping bag":""):bag?"Sleeping bag in the open":"Bare ground"};
+}
+function openSleepDialog(){
+  if(G.survivors[0].health<=0 || _combat) return;
+  cancelAutoWalk();
+  const c=sleepConditions(G), fuel=G.camps[positionKey(G)]?.fuel || 0;
+  showModal({title:"Rest and sleep",body:`<p><b>${c.label}</b> · ${G.weather.type} weather</p>
+    <p>Recovery: about ${c.recovery} energy/hour. Current exposure: -${c.loss} warmth/hour.</p>
+    <p>Incident risk: about ${Math.round(c.incident*100)}% over 8 hours at current conditions. ${c.watch?"A companion keeps watch.":""}</p>
+    <p>Field fire: ${timeText(fuel)} fuel. Accessible supplies: ${fmt(playerAmount(G,"food"))} food, ${fmt(playerAmount(G,"water"))} clean water.</p>
+    <p class="${c.loss>0 || c.radiation?"bad":"muted"}">${c.radiation?"Radiation continues during sleep and can kill you. ":""}${c.loss>0?"Exposure can become lethal. Conditions and fuel are checked throughout sleep.":"Conditions can change overnight. Shelter does not prevent settlement raids."}</p>`,
+    buttons:[...[120,240,480].map(n=>({label:`Sleep ${n/60}h`,action:()=>{closeModal();sleepFor(n);}})),{label:"Cancel",action:closeModal}]});
+}
+function sleepFor(minutes,rest=false){
+  const g=G,p=g.survivors[0],epoch=_activityEpoch;
+  if(p.health<=0 || _combat) return;
+  cancelAutoWalk();
+  let elapsed=0;
+  while(elapsed<minutes && p.health>0 && g.survivors[0]===p && _activityEpoch===epoch){
+    const fuel=g.camps[positionKey(g)]?.fuel || 0;
+    const step=Math.min(30,minutes-elapsed,fuel>0?fuel:Infinity), c=sleepConditions(g);
+    const spent=passMinutes(g,step); elapsed+=spent;
+    if(spent<step || _activityEpoch!==epoch || g.survivors[0]!==p || p.health<=0) break;
+    p.warmth=clamp(p.warmth-c.loss*step/60+(c.fire?step/30:0),0,100);
+    const damage=(p.warmth<=0?16:p.warmth<15?8:0)+(c.radiation?6:0);
+    p.health=clamp(p.health-damage*step/60,0,p.maxHealth);
+    if(!rest || p.energy<60) p.energy=clamp(p.energy+(rest?14:c.recovery)*step/60,0,rest?60:100);
+    if(p.health<=0){ pushLog(g,"Exposure overtook you while resting.","bad"); removeDead(g); break; }
+    if(c.roof && c.loss===0 && !c.radiation && p.hunger>40 && p.thirst>40) p.health=clamp(p.health+step/60,0,p.maxHealth);
+    if(chance(1-Math.pow(1-c.incident,step/480))){
+      pushLog(g,"Movement outside wakes you. Your rest is interrupted!","bad");
+      startCombat(pick(["wild_dogs","wolves","thieves"])); break;
+    }
+    if(document.getElementById("modal-root").firstChild) break;
+  }
+  pushLog(g,`Rested ${timeText(elapsed)}${elapsed<minutes?" before interruption":""}.`,"info"); render(); save();
+}
+
+function farmAction(id,action,crop){
+  const g=G, f=g.farms.find(f=>f.id===id);
+  if(!f || !atSettlement(g) || _combat || g.survivors[0].health<=0) return;
+  if(action==="select" && !f.planted && CROPS[crop]) f.crop=crop;
+  else if(action==="plant"){
+    if(f.planted || !playerPay(g,{seeds:1})) return;
+    f.planted=true; f.growth=0; f.water=Math.max(40,f.water); passMinutes(g,carriedTool(g,"hoe")?10:20); wearTool(g,carriedTool(g,"hoe"));
+  } else if(action==="water"){
+    if(!playerPay(g,{water:1})) return; f.water=100; passMinutes(g,5);
+  } else if(action==="fertilize"){
+    if(!playerPay(g,{compost:1})) return; f.fertility=clamp(f.fertility+30,0,100); passMinutes(g,5);
+  } else if(action==="harvest"){
+    if(!harvestFarm(g,f)) return; passMinutes(g,10);
+  } else if(action==="fence"){
+    if(f.fenced || !playerPay(g,{wood:4})) return;
+    f.fenced=true;passMinutes(g,20);
+  } else if(action==="irrigate"){
+    if(f.irrigated || !playerPay(g,{wood:4,clay:4,rope:1})) return;
+    f.irrigated=true;passMinutes(g,30);
+  }
+  render(); save();
+}
+function harvestFarm(g,f){
+  if(!f.planted || f.growth<100) return false;
+  const crop=CROPS[f.crop], scale=f.building==="greenhouse"?2:f.building==="crop_field"?1.5:1;
+  if(Object.entries(crop.output).some(([k,v])=>(g.resources[k]||0)+v*(k==="seeds"?1:scale)>resourceCap(g,k))) return false;
+  for(const [k,v] of Object.entries(crop.output)) addResource(g,k,v*(k==="seeds"?1:scale));
+  f.growth=0; f.planted=!!crop.perennial; f.fertility=Math.max(20,f.fertility-12);
+  pushLog(g,`Harvested ${crop.name.toLowerCase()} from ${BUILDINGS[f.building].name}.`,"good"); return true;
+}
+function updateFarms(g){
+  for(const f of g.farms){
+    if(!g.buildings[f.building]?.count) continue;
+    const workers=productionWorkers(g,f.building).filter(id=>g.jobs[id]!=="seed_saver");
+    const index=g.farms.filter(o=>o.building===f.building).indexOf(f);
+    const tended=workers.length>index;
+    if(tended){
+      if(f.growth>=100) harvestFarm(g,f);
+      if(!f.planted && productionStock(g,"seeds")>=1){ g.resources.seeds--; f.planted=true; }
+      if(f.water<60 && productionStock(g,"water")>=1){ g.resources.water--; f.water=100; }
+      if(f.fertility<55 && productionStock(g,"compost")>=1){ g.resources.compost--; f.fertility=clamp(f.fertility+30,0,100); }
+    }
+    if(f.irrigated && f.water<90){
+      const water=productionStock(g,"dirty_water")>=0.25?"dirty_water":"water";
+      if(productionStock(g,water)>=0.25){g.resources[water]-=0.25;f.water=clamp(f.water+25,0,100);}
+    }
+    if(g.weather.type==="rain") f.water=clamp(f.water+35,0,100);
+    if(!f.planted){ f.fertility=clamp(f.fertility+2,0,100); continue; }
+    if(f.growth>=100) continue;
+    if(!f.fenced && f.building!=="greenhouse" && chance(0.02)){
+      f.growth=Math.max(0,f.growth-8);pushLog(g,"Wildlife nibbled an unfenced crop. Fences protect plots.","warn");
+    }
+    if(f.water>=10){
+      const temp=g.weather.type==="cold" && f.building!=="greenhouse" ? 0.5 : 1;
+      f.growth=clamp(f.growth+100/(CROPS[f.crop].days*4)*(0.5+f.fertility/160)*temp,0,100);
+    }
+    f.water=Math.max(0,f.water-10);
+  }
+}
+function setWorkOrder(building,recipe,mode,target){
+  if(!BUILDINGS[building]?.workers || !G.buildings[building]?.count || !workplaceRecipes(building).includes(recipe)) return;
+  G.orders[building]={recipe,mode:mode==="maintain"?mode:"count",target:clamp(Math.floor(Number(target)||1),1,999),progress:0};
+  render(); save();
+}
+function orderStock(g,recipe){
+  const r=RECIPES[recipe];
+  return r.item ? g.townGear.filter(i=>i.type===r.item).length : Math.min(...Object.keys(r.output).map(k=>g.resources[k]||0));
+}
+function orderBlocker(g,bid,order){
+  if(!productionWorkers(g,bid).length) return "No worker";
+  if(!workplaceRecipes(bid).includes(order.recipe)) return "Wrong workplace";
+  if(order.mode==="maintain" && orderStock(g,order.recipe)>=order.target || order.mode==="count" && order.target<=0) return "Target reached";
+  const why=recipeBlocker(g,order.recipe,true); if(why) return why;
+  const r=RECIPES[order.recipe];
+  if(Object.entries(r.cost).some(([k,v])=>(g.resources[k]||0)-v<(g.reserves[k]||0))) return "Protected reserves";
+  if(r.item && g.townGear.length>=100) return "Equipment storage full";
+  if(Object.entries(r.output || {}).some(([k,v])=>(g.resources[k]||0)+v>(["food","meat","crops"].includes(k)?foodStorageCap(g):totalStorageCap(g)))) return "Storage full";
+  return "";
+}
+function produceOrders(g){
+  for(const [bid,order] of Object.entries(g.orders)){
+    if(!g.buildings[bid]?.count || orderBlocker(g,bid,order)) continue;
+    order.progress+=60*productionWorkers(g,bid).length*workerSkillBonus(g,bid,productionWorkers(g,bid));
+    const r=RECIPES[order.recipe];
+    let limit=40;
+    while(order.progress>=r.minutes && limit-- && !orderBlocker(g,bid,order)){
+      pay(g,r.cost); recipeOutput(g,order.recipe,true); order.progress-=r.minutes;
+      if(order.mode==="count") order.target--;
+    }
+    order.progress=Math.min(order.progress,r.minutes);
+  }
+}
+function haulCaches(g,amount){
+  for(const [key,site] of Object.entries(g.workSites)){
+    if(site.kind!=="outpost") continue;
+    const cache=g.caches[key]; if(!cache) continue;
+    for(const [r,v] of Object.entries(cache.resources)){
+      const got=addResource(g,r,Math.min(v,amount)); cache.resources[r]-=got; amount-=got;
+      if(amount<=0) return;
+    }
+  }
+}
+
+function useMedicine(){
+  const p=G.survivors[0];
+  if(p.health<=0 || _combat || !playerPay(G,{medicine:1})) return;
+  p.health=clamp(p.health+25,0,p.maxHealth); p.diseased=false;
+  passMinutes(G,5); pushLog(G,"Medicine treats your illness and restores 25 health.","good"); render(); save();
 }
 
 // --- Combat ---
@@ -800,6 +1088,8 @@ let _combat = null;
 
 function startCombat(enemyKey, onWinAfter, onFleeAfter){
   const e = ENEMIES[enemyKey];
+  if (!e || G.survivors[0].health<=0) return;
+  _activityEpoch++;
   cancelAutoWalk();
   _combat = {
     enemyKey, name:e.name, hp:e.hp, maxHp:e.hp, dmg:e.dmg, danger:e.danger, loot:e.loot,
@@ -815,13 +1105,15 @@ function combatAttack(){
   const p = G.survivors[0];
   // weapon bonus
   let weaponBonus = 0;
-  if (G.resources.weapons >= 1){ weaponBonus = 6; }
+  const weapon=equippedItem(G,"weapon");
+  if (weapon) weaponBonus=ITEMS[weapon.type].damage || 0;
   const skill = p.skills.combat || 0;
   const dmg = rint(3,7) + weaponBonus + skill + (p.traits.includes("brave")?2:0);
   c.hp -= dmg;
+  wearTool(G,weapon);
   c.log.push(`You strike ${c.name} for ${dmg}.`);
-  if (G.resources.ammo>=1 && G.resources.weapons>=1 && chance(0.3)){
-    G.resources.ammo -= 1;
+  if ((G.inventory.resources.ammo||0)>=1 && weapon?.type==="salvaged_weapon" && chance(0.3)){
+    G.inventory.resources.ammo -= 1;
     const ed = rint(6,12);
     c.hp -= ed;
     c.log.push(`You fire and hit for ${ed}.`);
@@ -839,8 +1131,9 @@ function combatFlee(){
     const fa = c.onFleeAfter;
     _combat = null; closeModal();
     p.energy = clamp(p.energy-10,0,100);
-    passPhase(G,1);
-    if (fa) fa();
+    const epoch=_activityEpoch;
+    passMinutes(G,15);
+    if (fa && p.health>0 && G.survivors[0]===p && _activityEpoch===epoch) fa();
     render(); save();
   } else {
     c.log.push(`You failed to flee.`);
@@ -852,10 +1145,8 @@ function enemyTurn(){
   const c = _combat; if (!c) return;
   const p = G.survivors[0];
   const ed = rint(c.dmg[0], c.dmg[1]);
-  // armor: 1 leather reduces dmg by 1, capped
-  let mitig = 0;
-  if (G.resources.leather >= 1) mitig += 2;
-  if (G.resources.tools >= 1) mitig += 1;
+  const armor=equippedItem(G,"clothing");
+  const mitig=ITEMS[armor?.type]?.armor || 0;
   const final = Math.max(1, ed - mitig);
   p.health = clamp(p.health - final, 0, p.maxHealth);
   c.log.push(`${c.name} hits you for ${final}.`);
@@ -868,7 +1159,7 @@ function combatWin(){
   const loot = {};
   for (const r in c.loot){
     const [lo,hi] = c.loot[r]; const amt = rint(lo,hi);
-    if (amt>0){ const got = addResource(G, r, amt); if (got>0) loot[r]=got; }
+    if (amt>0){ const got = addCarried(G, r, amt); if (got>0) loot[r]=got; }
   }
   const lootStr = Object.entries(loot).map(([k,v])=>`+${fmt(v)} ${RESOURCES[k].name}`).join(", ");
   pushLog(G, `You defeated ${c.name}.${lootStr?" Loot: "+lootStr:""}`, "good");
@@ -876,8 +1167,10 @@ function combatWin(){
   G.reputation += 0.5;
   const after = c.onWinAfter;
   _combat = null; closeModal();
-  if (after) after();
-  else { passPhase(G,1); render(); save(); }
+  const p=G.survivors[0],epoch=_activityEpoch;
+  passMinutes(G,15);
+  if (after && p.health>0 && G.survivors[0]===p && _activityEpoch===epoch) after();
+  render(); save();
 }
 
 function combatLose(){
@@ -885,10 +1178,10 @@ function combatLose(){
   pushLog(G, `You were beaten by ${c.name}. You lose resources crawling back.`, "bad");
   // lose resources
   const losses = ["wood","food","water","cloth","metal","weapons"];
-  for (const r of losses){ if (G.resources[r] > 0){ const l = Math.ceil(G.resources[r]*0.2); G.resources[r] -= l; } }
+  for (const r of losses){ if (G.inventory.resources[r] > 0){ const l = Math.min(G.inventory.resources[r],Math.ceil(G.inventory.resources[r]*0.2)); G.inventory.resources[r] -= l; } }
   _combat = null; closeModal();
   if (G.survivors[0].health<=0){ removeDead(G); save(); render(); return; }
-  passPhase(G,1);
+  passMinutes(G,15);
   render(); save();
 }
 
@@ -897,6 +1190,7 @@ function combatLose(){
 function build(buildingId, townX=null, townY=null){
   const g = G;
   const b = BUILDINGS[buildingId]; if (!b) return;
+  if (!atSettlement(g) || g.survivors[0].health<=0 || _combat){ pushLog(g,"Return to the settlement to build.","warn"); render(); return; }
   if (!isUnlocked(g, buildingId)) { pushLog(g,"Not yet researched.","warn"); render(); return; }
   if ((g.buildings[buildingId]?.count||0) >= b.max){ pushLog(g,`${b.name}: max reached.`,"warn"); render(); return; }
   if (!canPay(g, b.cost)){ pushLog(g,`Not enough resources for ${b.name}.`,"warn"); render(); return; }
@@ -915,8 +1209,8 @@ function build(buildingId, townX=null, townY=null){
   g.buildings[buildingId].count++;
   pushLog(g, `Built ${b.name}.`, "good");
   _buildToPlace = null;
-  // building takes one phase of time
-  passPhase(g,1);
+  normalizeExpedition(g);
+  passMinutes(g,buildingMinutes(g,buildingId)); wearTool(g,carriedTool(g,"hammer"));
   render(); save();
 }
 
@@ -939,9 +1233,12 @@ function research(nodeId){
 function assignJob(survId, jobKey){
   const g = G;
   const s = survivorById(g, survId); if (!s) return;
+  if (!JOBS[jobKey] || s.health<=0) return;
   if (s.isChild) return;
   if (s.isPlayer && jobKey!=="none"){ pushLog(g,"You manage things yourself — assign others.","warn"); render(); return; }
-  // unassign from previous building slot
+  if ((g.jobs[survId] || "none")===jobKey) return;
+  if (jobKey!=="none" && !jobAvailable(g,jobKey)){ pushLog(g,"No available workplace or resource site.","warn"); render(); return; }
+  // Validate before releasing the previous slot.
   const prev = g.jobs[survId];
   if (prev && JOBS[prev]?.building){
     const bid = JOBS[prev].building;
@@ -981,7 +1278,8 @@ function spawnStranger(g){
   g.survivors[0].happiness = clamp(g.survivors[0].happiness + 3,0,100);
 }
 
-function traderArrives(g){
+function traderArrives(g, field=false){
+  if (!field && !atSettlement(g)) return;
   // simple trade: give random good deal
   const offers = [
     {give:{wood:10}, get:{food:6}},
@@ -994,9 +1292,9 @@ function traderArrives(g){
     {give:{alcohol:2}, get:{books:1}},
     {give:{charcoal:4}, get:{iron:1}},
   ];
-  const affordable = offers.filter(o=>canPay(g, o.give));
+  const affordable = offers.filter(o=>field?playerCanPay(g,o.give):canPay(g, o.give));
   const offer = pick(affordable.length ? affordable : offers);
-  const canAccept = canPay(g, offer.give);
+  const canAccept = field?playerCanPay(g,offer.give):canPay(g, offer.give);
   showModal({
     title:"A Trader Arrives",
     body:`<p>A wanderer offers to trade:</p>
@@ -1004,8 +1302,8 @@ function traderArrives(g){
       <b>Get:</b> ${Object.entries(offer.get).map(([k,v])=>v+" "+RESOURCES[k].name).join(", ")}</p>`,
     buttons:[
       {label:"Accept", primary:true, disabled:!canAccept, title:canAccept?"":"You do not have the requested resources.", action:()=>{
-        if (!canPay(G, offer.give)){ pushLog(G,"You couldn't fulfill the trade.","warn"); }
-        else { pay(G, offer.give); for (const k in offer.get) addResource(G,k,offer.get[k]); pushLog(G,"Trade complete.","good"); G.reputation += 0.5; }
+        if (!(field?playerCanPay(G,offer.give):canPay(G, offer.give))){ pushLog(G,"You couldn't fulfill the trade.","warn"); }
+        else { field?playerPay(G,offer.give):pay(G, offer.give); for (const k in offer.get) field?addCarried(G,k,offer.get[k]):addResource(G,k,offer.get[k]); pushLog(G,"Trade complete.","good"); G.reputation += 0.5; }
         closeModal(); render(); save();
       }},
       {label:"Decline", action:()=>{ closeModal(); }}
@@ -1073,7 +1371,7 @@ function courtSurvivor(id){
   p.happiness = clamp(p.happiness + 3, 0, 100);
   s.happiness = clamp(s.happiness + 4, 0, 100);
   pushLog(g, `You spend time with ${s.name}. Heart: ${g.courtship[id]}/100.`, "good");
-  passPhase(g, 1);
+  passMinutes(g, 30);
   render(); save();
 }
 
@@ -1121,14 +1419,16 @@ function rollThreats(g){
   if (chance(0.01) && Object.keys(g.buildings).length > 4){
     const bid = pick(Object.keys(g.buildings).filter(b=>b!=="campfire"));
     if (bid && g.buildings[bid].count>0){
-      g.buildings[bid].count = Math.max(0, g.buildings[bid].count - 1);
+          loseBuilding(g,bid);
       pushLog(g, `Fire damaged your ${BUILDINGS[bid].name}.`, "bad");
     }
   }
   // food spoilage if too much
   if (g.resources.food > foodStorageCap(g)*0.9){
-    const spoil = Math.ceil(g.resources.food * 0.05);
+    const keeper=g.survivors.some(s=>s.health>0 && ["storekeeper","quartermaster"].includes(g.jobs[s.id]) && productionWorkers(g,JOBS[g.jobs[s.id]].building).includes(s.id));
+    const spoil = Math.ceil(g.resources.food * (keeper?0.02:0.05));
     g.resources.food = Math.max(0, g.resources.food - spoil);
+    addResource(g,"compost",spoil/5);
     pushLog(g, `${spoil} food spoiled.`, "warn");
   }
   // trader random
@@ -1204,7 +1504,7 @@ function raidEvent(g, forcedEnemyKey=null){
   let casualties = 0, lostRes = 0;
   // hurt random survivors slightly
   for (let i=0;i<count;i++){
-    const t = pick(g.survivors);
+    const t = pick(g.survivors.filter(s=>!s.isPlayer || atSettlement(g)));
     if (!t) continue;
     const dmg = Math.ceil(lossDmg / count) + rint(0,4);
     t.health = clamp(t.health - dmg, 0, t.maxHealth);
@@ -1222,11 +1522,30 @@ function raidEvent(g, forcedEnemyKey=null){
   if (chance(0.4) && Object.keys(g.buildings).length>3){
     const bid = pick(Object.keys(g.buildings).filter(b=>b!=="campfire"));
     if (bid && g.buildings[bid].count>0){
-      g.buildings[bid].count = Math.max(0, g.buildings[bid].count - 1);
+      loseBuilding(g,bid);
       pushLog(g, `${BUILDINGS[bid].name} was damaged in the raid.`,"bad");
     }
   }
   pushLog(g, `Raid! ${count} ${e.name}${count>1?"s":""} attacked. ${casualties? casualties+" lost.":""} ${lostRes? lostRes+" supplies stolen.":""}`, "bad");
   for (const s of g.survivors) s.happiness = clamp(s.happiness-5,0,100);
   removeDead(g);
+}
+
+function loseBuilding(g,bid){
+  if(!g.buildings[bid]?.count) return;
+  g.buildings[bid].count--;
+  let removed=false;
+  for(let y=0;y<MAP_H && !removed;y++) for(let x=0;x<MAP_W && !removed;x++){
+    if(g.map[y][x].settlementBuilding!==bid) continue;
+    g.map[y][x].settlementBuilding=null;
+    const tx=Math.floor(TOWN_W/2)+x-g.villageX, ty=Math.floor(TOWN_H/2)+y-g.villageY;
+    if(inTownBounds(tx,ty) && g.town[ty][tx]?.building===bid) g.town[ty][tx]=null;
+    removed=true;
+  }
+  if(!removed){
+    for(let y=0;y<TOWN_H && !removed;y++) for(let x=0;x<TOWN_W && !removed;x++){
+      if(g.town[y][x]?.building===bid){g.town[y][x]=null;removed=true;}
+    }
+  }
+  normalizeExpedition(g);
 }
