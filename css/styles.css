@@ -109,6 +109,15 @@
   .modal{background:var(--bg2);border:1px solid var(--accent2);border-radius:6px;padding:14px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto}
   .modal h2{margin:0 0 8px 0;color:var(--accent);font-size:15px}
   .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+
+  /* Right-click context menu */
+  .ctx-menu{position:fixed;z-index:1100;min-width:180px;max-width:300px;max-height:70vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--accent2);border-radius:5px;box-shadow:0 6px 20px rgba(0,0,0,.6);padding:7px 8px;font-size:12px}
+  .ctx-menu h4{margin:0 0 4px 0;color:var(--accent);font-size:12px;letter-spacing:.3px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .ctx-menu .ctx-info{color:var(--muted);font-size:11px;line-height:1.5;margin-bottom:6px}
+  .ctx-menu .ctx-info b{color:var(--text)}
+  .ctx-menu .ctx-actions{display:flex;flex-direction:column;gap:3px}
+  .ctx-menu .ctx-actions button{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 8px;font-size:12px}
+  .ctx-menu .ctx-actions button .sub{color:var(--dim);font-size:10px}
   /* Sage chat modal */
   .sage-modal{max-width:640px}
   .sage-history{background:#0c1115;border:1px solid var(--line);border-radius:3px;padding:8px;height:300px;overflow-y:auto;font-size:12px;display:flex;flex-direction:column;gap:6px}

@@ -39,6 +39,92 @@ function renderHeader(){
   if(weather) weather.textContent=g.weather.type;
 }
 
+// ------------------------- CONTEXT-MENU PROVIDERS ------------------------------
+// Each returns {title, info, actions} for showContextMenu (modal.js). Reused by
+// the right-click handlers wired onto quick actions, the stockpile, town
+// buildings, build cards and survivors.
+
+const QUICK_ACTION_ICONS = {
+  eat:"🍞", drink:"💧", rest:"💤", bandage:"🩹", warm_fire:"♨️",
+  chop_wood:"🪓", gather:"🌿", fetch_water:"🪣", gather_fiber:"🧵", gather_stone:"🪨",
+  mine:"⛏", dig:"🪏", fish:"🎣", hunt:"🦌", survey:"🧭",
+  cook:"🍳", boil_water:"🔥", purify_water:"🧪", craft_arrows:"🏹", pitch_tent:"⛺",
+  lay_bag:"🛌", lean_to:"🛖", light_fire:"🔦", pack_camp:"🎒", gather_spirits:"🎺",
+  study:"📖", train:"🥋",
+};
+
+function quickActionContext(g, k, icon, label, sub){
+  const blocker = quickActionBlocker(g, k);
+  const info = `<b>${timeText(actionMinutes(g,k))}</b> · ${ACTION_ENERGY[k] || 0} energy<br>${escapeHtml(sub)}`
+    + (blocker ? `<br><span class="bad">${escapeHtml(blocker)}</span>` : "");
+  return { title: `${icon} ${label}`, info, actions: [
+    { label: "Do it", sub: timeText(actionMinutes(g,k)), disabled: !!blocker, title: blocker || "", action: ()=>playerAction(k) },
+  ]};
+}
+
+function resourceContext(g, k){
+  const r = RESOURCES[k]; if (!r) return null;
+  const cap = (k==="food"||k==="crops"||k==="meat") ? foodStorageCap(g) : totalStorageCap(g);
+  const makers = new Set(), users = new Set();
+  for (const id in BUILDINGS){ const b = BUILDINGS[id], e = b.effects || {};
+    if ((e.produce && k in e.produce) || (e.produce_per_worker && k in e.produce_per_worker) || (e.convert && e.convert.to && k in e.convert.to)) makers.add(b.name);
+    if ((e.consume && k in e.consume) || (e.convert && e.convert.from && k in e.convert.from)) users.add(b.name);
+  }
+  for (const id in JOBS){ const j = JOBS[id]; if (j.output && k in j.output) makers.add(j.name); if (j.consume && k in j.consume) users.add(j.name); }
+  for (const id in RECIPES){ const rc = RECIPES[id], nm = rc.name || (rc.item && ITEMS[rc.item] ? ITEMS[rc.item].name : id);
+    if (rc.output && k in rc.output) makers.add(nm); if (rc.cost && k in rc.cost) users.add(nm); }
+  const weight = RESOURCE_WEIGHTS[k] != null ? RESOURCE_WEIGHTS[k] : 0.3;
+  const trim = s => [...s].slice(0,10).join(", ") + ([...s].length>10 ? "…" : "");
+  const info = `Town stock: <b>${fmt(g.resources[k]||0)}</b> / ${cap} · weight ${weight} each`
+    + (makers.size ? `<br><b>Made by:</b> ${trim(makers)}` : "")
+    + (users.size ? `<br><b>Used by:</b> ${trim(users)}` : "");
+  return { title: `${r.icon} ${r.name}`, info, actions: [] };
+}
+
+function townBuildingContext(g, id){
+  const b = BUILDINGS[id]; if (!b) return null;
+  const count = g.buildings[id]?.count || 1;
+  const assigned = (g.workerAssign[id] || []).length;
+  const dmg = g.buildings[id]?.dmg || 0;
+  const info = `${escapeHtml(b.desc||"")}<br><b>Effect:</b> ${buildingYieldText(b)}`
+    + `<br>Built ${g.buildings[id]?.count||0}/${b.max}`
+    + (b.workers ? ` · workers ${assigned}/${b.workers*count}` : "")
+    + (dmg ? `<br><span class="warn">Damaged (${Math.round(dmg)})</span>` : "");
+  const actions = [];
+  if (b.workers) actions.push({ label: "Assign workers", sub: "Jobs tab", action: ()=>{ _activeTab="jobs"; render(); } });
+  actions.push({ label: "Build more", sub: "Build tab", action: ()=>{ _activeTab="build"; render(); } });
+  return { title: `${b.icon||""} ${b.name}`, info, actions };
+}
+
+function buildCardContext(g, id){
+  const b = BUILDINGS[id]; if (!b) return null;
+  const unlocked = isUnlocked(g, id), built = g.buildings[id]?.count || 0;
+  const info = `${escapeHtml(b.desc||"")}<br><b>Cost:</b> ${costString(b.cost, g) || "Free"}<br><b>Effect:</b> ${buildingYieldText(b)}<br>Build ${timeText(buildingMinutes(g,id))} · ${built}/${b.max}`
+    + (unlocked ? "" : `<br><span class="dim">🔒 Requires ${unlockRequirement(g, id)}</span>`);
+  const can = unlocked && canPay(g, b.cost) && built < b.max && atSettlement(g);
+  const why = !atSettlement(g) ? "Return to the settlement to build." : !unlocked ? "Locked" : built>=b.max ? "At max" : !canPay(g,b.cost) ? "Can't afford" : "";
+  return { title: `${b.icon||""} ${b.name}`, info, actions: [
+    { label: "Place on map", disabled: !can, title: why, action: ()=>build(id) },
+  ]};
+}
+
+function survivorContext(g, s){
+  const partner = s.partnerId ? survivorById(g, s.partnerId) : null;
+  const heart = g.courtship?.[s.id] || 0;
+  const job = g.jobs?.[s.id] && JOBS[g.jobs[s.id]] ? JOBS[g.jobs[s.id]].name : "Idle";
+  const info = `${s.sex==="F"?"female":"male"}, ${s.isChild?"child":"adult age "+s.age} · ${s.isPlayer?"you":job}`
+    + `<br>❤ ${Math.round(s.health)} · 🍞 ${Math.round(s.hunger)} · 💧 ${Math.round(s.thirst)} · ⚡ ${Math.round(s.energy)}`
+    + `<br>Traits: ${s.traits.map(t=>TRAITS[t].label).join(", ") || "none"}`
+    + (partner ? `<br>💍 ${escapeHtml(partner.name)}` : heart ? `<br>❤ Heart ${heart}/100` : "")
+    + (s.diseased ? `<br><span class="bad">🤒 Diseased</span>` : "") + (s.injured ? `<br><span class="warn">🩹 Injured</span>` : "");
+  const actions = [];
+  if (!s.isPlayer && !s.isChild) actions.push({ label: "Assign job", sub: "Jobs tab", action: ()=>{ _activeTab="jobs"; render(); } });
+  if (typeof eligibleForCourtship === "function" && eligibleForCourtship(g, s)) actions.push({ label: "Court", sub: "30 min", action: ()=>courtSurvivor(s.id) });
+  if (heart >= 100 && !partner) actions.push({ label: "Marry", action: ()=>marrySurvivor(s.id) });
+  if (s.isPlayer && s.diseased) actions.push({ label: "Treat illness", sub: "1 medicine", action: ()=>useMedicine() });
+  return { title: `${s.isPlayer?"⭐ ":""}${escapeHtml(s.name)}`, info, actions };
+}
+
 function renderLeft(){
   const g = G; const p = g.survivors[0];
   const root = document.getElementById("left-panel");
@@ -73,14 +159,17 @@ function renderLeft(){
     ["Gather and explore",[["chop_wood","Chop wood","3-5 wood; axes improve yield"],["gather","Forage","Food, herbs and seeds"],["fetch_water","Fetch water","2 water; containers increase batch"],["gather_fiber","Gather fiber","3-5 fiber"],["gather_stone","Gather stone","2-3 stone"],["mine","Mine","Nearby deposit + pickaxe"],["dig","Dig","3 sand + 2 clay"],["fish","Fish","1-3 meat"],["hunt","Hunt","Bow + 1 arrow"],["survey","Survey","Binoculars reveal terrain"]]],
     ["Camp and craft",[["cook","Cook","Meat or 2 crops + wood / 3 food"],["boil_water","Boil water","2 dirty water + wood / 2 water"],["purify_water","Filter water","2 dirty water + charcoal / 2 water"],["craft_arrows","Craft arrows","Wood + bone / 5 arrows"],["pitch_tent","Pitch tent","Deploy carried tent"],["lay_bag","Lay sleeping bag","Deploy carried sleeping bag"],["lean_to","Build lean-to","4 wood + 4 fiber"],["light_fire","Fuel field fire","1 wood / 4h fuel"],["pack_camp","Pack camp","Recover gear and extinguish fire"],["gather_spirits","Share stories","+5 happiness"],["study","Study","1 book / 2-5 knowledge"],["train","Train","Training yard / +0.5 combat"]]],
   ];
-  const search=el("button","small","Search nearby"); search.onclick=searchNearby; qa.appendChild(search);
+  const search=el("button","small","🔍 Search nearby"); search.onclick=searchNearby; qa.appendChild(search);
   for(const [name,actions] of groups){
     const group=el("details","quick-group"); group.open=name==="Survival" || _openQuickGroups.has(name);
     group.ontoggle=()=>{if(group.open) _openQuickGroups.add(name); else _openQuickGroups.delete(name);};
     group.appendChild(el("summary","",name)); const grid=el("div","actgrp");
     for(const [k,label,sub] of actions){
-      const blocker=quickActionBlocker(g,k), b=el("button","",`${label}<span class="sub">${timeText(actionMinutes(g,k))} · ${ACTION_ENERGY[k] || 0} energy · ${sub}</span>${blocker?`<span class="sub warn">${blocker}</span>`:""}`);
-      b.disabled=!!blocker; b.title=blocker; b.onclick=()=>playerAction(k); grid.appendChild(b);
+      const icon=QUICK_ACTION_ICONS[k]||"";
+      const blocker=quickActionBlocker(g,k), b=el("button","",`${icon?icon+" ":""}${label}<span class="sub">${timeText(actionMinutes(g,k))} · ${ACTION_ENERGY[k] || 0} energy · ${sub}</span>${blocker?`<span class="sub warn">${blocker}</span>`:""}`);
+      b.disabled=!!blocker; b.title=blocker||"Right-click for details"; b.onclick=()=>playerAction(k);
+      b.oncontextmenu=(ev)=>{ ev.preventDefault(); showContextMenu(ev, quickActionContext(g,k,icon||"⚡",label,sub)); };
+      grid.appendChild(b);
     }
     group.appendChild(grid); qa.appendChild(group);
   }
@@ -120,7 +209,10 @@ function renderRight(){
     if (v <= 0 && k!=="wood" && k!=="food" && k!=="water" && k!=="knowledge") continue; // hide empties
     const realCap = (k==="food"||k==="crops"||k==="meat") ? fcap : cap;
     const full = v >= realCap*0.95;
-    list.innerHTML += `<div class="ri"><span class="nm">${RESOURCES[k].icon} ${RESOURCES[k].name}</span><span class="vl ${full?'full':''}">${fmt(v)}</span></div>`;
+    const row = el("div","ri",`<span class="nm">${RESOURCES[k].icon} ${RESOURCES[k].name}</span><span class="vl ${full?'full':''}">${fmt(v)}</span>`);
+    row.title = "Right-click for details";
+    row.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, resourceContext(g,k)); };
+    list.appendChild(row);
   }
   rc.appendChild(list);
   root.appendChild(rc);
@@ -579,7 +671,8 @@ function renderTownTab(root){
           <span class="building-icon">${b?.icon || "?"}</span>
           <span class="building-name">${b?.name || slot.building}</span>
         </div>`;
-        cell.title = b ? `${b.name}: ${b.desc}` : slot.building;
+        cell.title = b ? `${b.name}: ${b.desc} (right-click for details)` : slot.building;
+        cell.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, townBuildingContext(g, slot.building)); };
       } else {
         if (_buildToPlace) {
           const b = BUILDINGS[_buildToPlace];
@@ -642,6 +735,7 @@ function renderBuildTab(root){
       if(!atSettlement(g)) btn.title="Return to the settlement to build.";
       btn.onclick = ()=> build(id);
       item.appendChild(btn);
+      item.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, buildCardContext(g, id)); };
       if (!unlocked){
         const lk = el("div","dim","🔒 Locked — requires " + unlockRequirement(g, id));
         item.appendChild(lk);
@@ -670,6 +764,7 @@ function renderSurvivorsTab(root){
     const heart = g.courtship?.[s.id] || 0;
     const canCourt = typeof eligibleForCourtship === "function" && eligibleForCourtship(g, s);
     const div = el("div","surv");
+    div.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, survivorContext(g, s)); };
     div.innerHTML = `<div class="head"><div><b>${s.isPlayer?"⭐ ":""}${s.name}</b>${s.isChild?" 👶":""} <span class="muted">${s.sex==="F"?"female":"male"}, ${s.isChild?"child":"adult, age "+s.age}</span></div>
       <div class="muted">${s.isPlayer?"(You)":""}</div></div>
       <div class="traits">${s.traits.map(t=>'<span class="badge">'+TRAITS[t].label+'</span>').join(" ")}
