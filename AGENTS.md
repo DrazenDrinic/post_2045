@@ -39,7 +39,12 @@ There are no automated tests. Before reporting work as done:
    node --check js/help.js
    node --check js/main.js
    ```
-2. If your change is non-trivial, say in your summary that you have NOT manually playtested the change in a browser. Do not claim a feature works without trying it.
+2. If you changed any game data (costs, buildings, recipes, jobs, research, items, enemies, crops…), regenerate the pricing reference:
+   ```
+   node tools/gen-pricing.js
+   ```
+   `PRICING.md` is generated from `js/data.js` (not hand-edited) and the script fails loudly on unrendered content. Edit `tools/gen-pricing.js`, not `PRICING.md`.
+3. If your change is non-trivial, say in your summary that you have NOT manually playtested the change in a browser. Do not claim a feature works without trying it.
 
 ## Code map
 

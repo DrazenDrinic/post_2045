@@ -17,13 +17,23 @@ There is no build step, no package manager, no server, no external assets, and n
 
 ## How to syntax-check (no tests)
 
+The game is split across `js/*.js` (loaded in order by `index.html`). Check each file:
+
 ```
-node -e "const fs=require('fs'); const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*)<\/script>/); fs.writeFileSync('_check.js', m[1]);"
-node --check _check.js
-rm _check.js
+for f in js/*.js; do node --check "$f" || echo "FAIL $f"; done
 ```
 
-Manual playtest: open in a browser, walk the map with WASD / arrows, click tiles to auto-walk, click tabs.
+Manual playtest: open `index.html` in a browser, walk the map with WASD / arrows, click tiles to auto-walk, click tabs.
+
+## Regenerating PRICING.md
+
+`PRICING.md` is **generated, not hand-written** — it is built from the data tables so it cannot drift from the game. After changing any costs, buildings, recipes, jobs, research, items, enemies, crops, etc., regenerate it:
+
+```
+node tools/gen-pricing.js
+```
+
+The script reads `js/data.js` (plus a clearly-labelled MIRRORED-FROM-CODE block for values that live in the action code) and **fails loudly** if the game adds content it does not know how to render — e.g. a new building-effect key, an unknown resource, or any entity missing from the output. Do **not** edit `PRICING.md` by hand; edit `tools/gen-pricing.js` instead. The in-game **📖 Guide → Prices & Costs** tab (and its 🔎 search) read the same tables live, so they stay in sync automatically.
 
 ## Script layout (single `<script>` block in `index.html`)
 
