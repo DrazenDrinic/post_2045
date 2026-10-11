@@ -855,6 +855,327 @@ function describeEffects(b){
   return parts.join(" • ");
 }
 
+// ===================== GUIDE: SEARCH + PRICING =====================
+// A searchable, always-accurate reference generated live from the DATA tables
+// (RESOURCES, BUILDINGS, JOBS, KNOWLEDGE, RECIPES, ITEMS, MAP_FEATURES,
+//  MAP_ENTITIES, ENEMIES, BIOMES, TRAITS, CROPS). Because it reads the real
+// tables, it never drifts from the game or from PRICING.md.
+
+let _guideSearch = "";
+let _searchIndex = null;
+
+function priceNum(n){ return n % 1 === 0 ? ""+n : (+n.toFixed(2)).toString(); }
+
+// Format a {key:amount} or {key:[lo,hi]} map as "4 🧵 Cloth · 2 🪵 Wood".
+function fmtResMap(obj, sep=" · "){
+  if (!obj) return "—";
+  const parts=[];
+  for (const k in obj){
+    const v=obj[k], r=RESOURCES[k];
+    const amt=Array.isArray(v) ? (v[0]===v[1]?priceNum(v[0]):`${priceNum(v[0])}–${priceNum(v[1])}`) : priceNum(v);
+    parts.push(`${amt} ${r&&r.icon?r.icon+" ":""}${r?r.name:k}`);
+  }
+  return parts.length ? parts.join(sep) : "—";
+}
+// Human names of every resource referenced by a map — feeds the search text blob.
+function resNamesOf(obj){
+  return obj ? Object.keys(obj).map(k=>RESOURCES[k]?RESOURCES[k].name:k).join(" ") : "";
+}
+// Which research unlocks each building / job id.
+function buildUnlockMaps(){
+  const b={}, j={};
+  for (const n of KNOWLEDGE){
+    for (const id of (n.unlock&&n.unlock.buildings||[])) b[id]=n.name;
+    for (const id of (n.unlock&&n.unlock.jobs||[])) j[id]=n.name;
+  }
+  return {b,j};
+}
+function buildingEffectText(b){
+  const e=b.effects||{}, out=[];
+  if (e.housing) out.push(`houses ${e.housing}`);
+  if (e.storage) out.push(`+${e.storage} storage (all resources)`);
+  if (e.food_storage) out.push(`+${e.food_storage} food/crop/meat storage`);
+  if (e.warmth) out.push("provides warmth");
+  if (e.cook) out.push("lets you cook");
+  if (e.produce) out.push(`produces ${fmtResMap(e.produce)}/day`);
+  if (e.produce_per_worker) out.push(`produces ${fmtResMap(e.produce_per_worker)} per worker/day`);
+  if (e.convert) out.push(`converts ${fmtResMap(e.convert.from)} → ${fmtResMap(e.convert.to)} (×${e.convert.perWorker}/worker)`);
+  if (e.consume) out.push(`uses ${fmtResMap(e.consume)}/day`);
+  if (e.heal_per_worker) out.push(`heals ${e.heal_per_worker} HP per worker`);
+  if (e.disease_resist) out.push("disease resistance");
+  if (e.happiness_all) out.push("+happiness for everyone");
+  if (e.morale_all) out.push("+morale for everyone");
+  if (e.happiness) out.push("+happiness");
+  if (e.reputation) out.push("+reputation");
+  if (e.knowledge || e.knowledge_per_worker) out.push("generates knowledge");
+  if (e.child_growth) out.push("children grow faster");
+  if (e.safety || e.safety_per_worker) out.push("+settlement safety");
+  if (e.wall) out.push(`+${e.wall} wall (reduces raid damage)`);
+  if (e.warning) out.push("early raid warning");
+  if (e.danger_reduce) out.push(`-${e.danger_reduce} danger`);
+  if (e.combat_train) out.push("trains combat skill");
+  if (e.attract_chance) out.push("attracts survivors");
+  if (e.trade_chance) out.push("attracts traders");
+  if (e.repair) out.push("repairs buildings");
+  if (e.order) out.push("holds troublemakers");
+  return out.join("; ");
+}
+
+// Build the full "Prices & Costs" guide section from the live tables.
+function guidePriceSection(){
+  const U=buildUnlockMaps();
+
+  // Quick & survival actions (times pulled from ACTION_COSTS).
+  const qa=[
+    ["🍞 Eat","eat","1 food → +30 hunger"],
+    ["💧 Drink","drink","1 clean water (+30) or dirty (+20, 15% illness)"],
+    ["🪓 Chop Wood","chop_wood","3–5 wood; axes boost speed & yield"],
+    ["🌿 Forage","gather","food, herbs and seeds"],
+    ["🪣 Fetch Water","fetch_water","2 water (3 w/ canteen, 5 w/ bucket) beside water"],
+    ["🔥 Boil Water","boil_water","2 dirty + 1 wood → 2 clean water (needs fire)"],
+    ["⬛ Purify Water","purify_water","2 dirty + 1 charcoal → 2 clean water"],
+    ["🍳 Cook","cook","1 meat or 2 crops + 1 wood → 3 food"],
+    ["♨️ Warm Up","warm_fire","+30 warmth at a fueled fire"],
+    ["🎺 Gather Spirits","gather_spirits","+happiness for the nearby group"],
+    ["🏹 Craft Arrows","craft_arrows","1 wood + 1 bones → 5 arrows"],
+    ["🦌 Hunt","hunt","carry bow + spend 1 arrow → meat, hides, bones"],
+    ["💤 Rest","rest","+7 energy (short rest)"],
+    ["🥋 Train","train","+0.5 combat skill"],
+    ["📖 Study","study","1 book → +2–5 knowledge"],
+    ["⛏ Mine","mine","needs pickaxe → ore / stone"],
+    ["🕳️ Dig","dig","needs shovel → clay / sand"],
+    ["🎣 Fish","fish","needs rod beside water → meat"],
+  ];
+  let qaRows="";
+  for (const [name,key,eff] of qa){
+    const t = (key==="eat"||key==="drink") ? "instant" : (ACTION_COSTS[key]!=null?timeText(ACTION_COSTS[key]):"—");
+    qaRows+=`<tr><td>${name}</td><td>${t}</td><td>${eff}</td></tr>`;
+  }
+  qaRows+=`<tr><td>🛏️ Sleep</td><td>2h / 4h / 8h</td><td>recovers 4–14 energy/hr by shelter; exposure applies</td></tr>`;
+
+  // Crafting recipes.
+  let recRows="";
+  for (const id in RECIPES){
+    const r=RECIPES[id];
+    const name=r.name || (r.item&&ITEMS[r.item]?ITEMS[r.item].name:id);
+    const yields=r.output ? fmtResMap(r.output) : (r.item&&ITEMS[r.item]?`${ITEMS[r.item].icon||""} ${ITEMS[r.item].name}`:id);
+    const station=r.station ? r.station.replace(/_/g," ") : "by hand";
+    recRows+=`<tr><td>${name}</td><td>${fmtResMap(r.cost)}</td><td>${yields}</td><td>${timeText(r.minutes)}</td><td>${station}${r.tech?` · ${r.tech}`:""}</td></tr>`;
+  }
+
+  // Buildings grouped by category.
+  const catOrder=["Shelter","Storage","Water","Food","Medicine","Community","Education","Crafting","Engineering","Defense","Trade","Survival"];
+  const byCat={};
+  for (const id in BUILDINGS){ const b=BUILDINGS[id]; (byCat[b.cat]=byCat[b.cat]||[]).push([id,b]); }
+  const cats=[...catOrder.filter(c=>byCat[c]), ...Object.keys(byCat).filter(c=>!catOrder.includes(c))];
+  let bldHtml="";
+  for (const cat of cats){
+    let rows="";
+    for (const [id,b] of byCat[cat]){
+      const free=!b.cost || Object.keys(b.cost).length===0 || (Object.keys(b.cost).length===1 && b.cost.wood===0);
+      const cost=free ? "free" : fmtResMap(b.cost);
+      const unlock=U.b[id] ? ` <span class="dim">🔒 ${U.b[id]}</span>` : "";
+      rows+=`<tr><td>${b.icon||""} ${b.name}</td><td>${cost}</td><td>${buildingEffectText(b)||"—"}${unlock}</td></tr>`;
+    }
+    bldHtml+=`<div class="price-cat">${cat}</div><div class="price-wrap"><table class="price-table"><tr><th>Building</th><th>Cost</th><th>Effect</th></tr>${rows}</table></div>`;
+  }
+
+  // Research by cost.
+  const byCost={};
+  for (const n of KNOWLEDGE){ (byCost[n.cost]=byCost[n.cost]||[]).push(n.name); }
+  let knowRows="";
+  for (const cost of Object.keys(byCost).map(Number).sort((a,b)=>a-b)){
+    knowRows+=`<tr><td>${cost} 🧠</td><td>${byCost[cost].join(" · ")}</td></tr>`;
+  }
+
+  // World-map travel.
+  let travelRows="";
+  for (const k in TRAVEL){
+    if (k==="village") continue;
+    const [mins,en]=TRAVEL[k];
+    travelRows+=`<tr><td>${BIOMES[k]?BIOMES[k].name:k}</td><td>${mins}m</td><td>${en}</td></tr>`;
+  }
+  travelRows+=`<tr><td>River / Lake</td><td colspan="2">impassable</td></tr>`;
+
+  return `
+    <div class="guide-section" id="g-pricing">
+      <h3>💰 Prices &amp; Costs</h3>
+      <p class="muted">A complete reference of what everything costs — generated live from the game data, so it always matches the current build. Use the search box at the top to look up any single item (e.g. “clean water”).</p>
+      <p><b>Four currencies:</b> ⏳ Time (phases of 6h; 4 phases = 1 day) · 📦 Resources · 🧠 Knowledge (research only) · ⚡ Energy (drained by most actions &amp; every step).</p>
+
+      <h4>⚡ Quick &amp; survival actions</h4>
+      <div class="price-wrap"><table class="price-table"><tr><th>Action</th><th>Time</th><th>Effect / cost</th></tr>${qaRows}</table></div>
+
+      <h4>🛠️ Crafting recipes</h4>
+      <div class="price-wrap"><table class="price-table"><tr><th>Item</th><th>Cost</th><th>Yields</th><th>Time</th><th>Station</th></tr>${recRows}</table></div>
+
+      <h4>🏘️ Buildings</h4>
+      ${bldHtml}
+
+      <h4>🧠 Research (knowledge points)</h4>
+      <div class="price-wrap"><table class="price-table"><tr><th>Cost</th><th>Tech</th></tr>${knowRows}</table></div>
+
+      <h4>🚶 World-map travel (per tile)</h4>
+      <div class="price-wrap"><table class="price-table"><tr><th>Terrain</th><th>Time</th><th>Energy</th></tr>${travelRows}</table></div>
+      <p class="muted">Each step also drains ~0.12 hunger and ~0.18 thirst (0.4 in wasteland). Condition penalties (cold, injury, disease, hunger, thirst) multiply both time and energy. A carried canteen cuts travel thirst by 20%.</p>
+
+      <h4>💀 Involuntary losses</h4>
+      <ul>
+        <li><b>Combat defeat</b> — lose 20% of carried wood, food, water, cloth, metal and weapons (town stocks are safe).</li>
+        <li><b>Raids / theft</b> — attackers can steal food, water, metal, weapons, ammo, cloth and tools, and may damage buildings.</li>
+      </ul>
+    </div>
+  `;
+}
+
+// Build a flat, searchable index of (almost) everything in the game.
+function buildSearchIndex(){
+  if (_searchIndex) return _searchIndex;
+  const U=buildUnlockMaps();
+  const idx=[];
+  const strip=s=>String(s).replace(/<[^>]+>/g," ");
+  const add=(cat,icon,name,id,detail,extra="")=>idx.push({
+    cat, icon:icon||"•", name, detail,
+    text:(name+" "+id+" "+cat+" "+strip(detail)+" "+extra).toLowerCase()
+  });
+  const inline=obj=>fmtResMap(obj).replace(/ · /g,", ");
+
+  // Resources
+  for (const k in RESOURCES){ const r=RESOURCES[k]; const w=RESOURCE_WEIGHTS[k];
+    add("Resource",r.icon,r.name,k,`Raw or crafted resource.${w!=null?` Carry weight ${w} per unit.`:""}`); }
+
+  // Buildings
+  for (const id in BUILDINGS){ const b=BUILDINGS[id], e=b.effects||{};
+    const free=!b.cost || Object.keys(b.cost).length===0 || (Object.keys(b.cost).length===1 && b.cost.wood===0);
+    const detail=`${b.desc||""} <b>Cost:</b> ${free?"free":fmtResMap(b.cost)}. ${buildingEffectText(b)}${b.workers?` · ${b.workers} worker slot${b.workers>1?"s":""}`:""}${U.b[id]?` · unlocked by ${U.b[id]}`:""}.`;
+    const extra=[b.cost,e.produce,e.produce_per_worker,e.consume,e.convert&&e.convert.from,e.convert&&e.convert.to]
+      .map(resNamesOf).join(" ")+" "+(b.cat||"");
+    add("Building",b.icon,b.name,id,detail,extra);
+  }
+
+  // Jobs
+  for (const id in JOBS){ if (id==="none") continue; const j=JOBS[id];
+    const bld=j.building ? ` Works at ${BUILDINGS[j.building]?BUILDINGS[j.building].name:j.building}.` : " General task (no building needed).";
+    const con=j.consume ? ` Uses ${inline(j.consume)}/day.` : "";
+    const out=Object.keys(j.output||{}).length ? ` Output: ${inline(j.output)}/day.` : "";
+    add("Job",(j.building&&BUILDINGS[j.building]&&BUILDINGS[j.building].icon)||"🧑‍🔧",j.name,id,`${j.desc||""}${bld}${out}${con}`,resNamesOf(j.output)+" "+resNamesOf(j.consume));
+  }
+
+  // Research
+  for (const n of KNOWLEDGE){
+    const unl=[...(n.unlock&&n.unlock.buildings||[]).map(b=>BUILDINGS[b]?BUILDINGS[b].name:b),
+               ...(n.unlock&&n.unlock.jobs||[]).map(j=>JOBS[j]?JOBS[j].name:j)];
+    const req=(n.req||[]).map(r=>{const f=KNOWLEDGE.find(x=>x.id===r);return f?f.name:r;});
+    add("Research","🧠",n.name,n.id,`${n.desc||""} <b>Cost:</b> ${n.cost} 🧠.${req.length?` Requires ${req.join(", ")}.`:""}${unl.length?` Unlocks ${unl.join(", ")}.`:""}`,n.cat+" "+unl.join(" "));
+  }
+
+  // Recipes
+  for (const id in RECIPES){ const r=RECIPES[id];
+    const name=r.name || (r.item&&ITEMS[r.item]?ITEMS[r.item].name:id);
+    const yields=r.output ? inline(r.output) : (r.item&&ITEMS[r.item]?ITEMS[r.item].name:id);
+    add("Recipe","🛠",name,id,`Craft ${fmtResMap(r.cost)} → ${yields}. ${timeText(r.minutes)} at ${r.station?r.station.replace(/_/g," "):"hand"}${r.tech?` (needs ${r.tech})`:""}.`,resNamesOf(r.cost)+" "+resNamesOf(r.output)+" "+(r.item||""));
+  }
+
+  // Items / gear
+  for (const id in ITEMS){ const it=ITEMS[id], rec=RECIPES[id], s=[];
+    if (it.durability) s.push(`durability ${it.durability}`);
+    if (it.weight!=null) s.push(`weight ${it.weight}`);
+    if (it.capacity) s.push(`carry capacity ${it.capacity}`);
+    if (it.armor) s.push(`armor ${it.armor}`);
+    if (it.insulation) s.push(`insulation ${it.insulation}`);
+    if (it.damage) s.push(`damage ${it.damage}`);
+    if (it.vision) s.push(`+${it.vision} night vision`);
+    const craft=rec ? ` Craft ${fmtResMap(rec.cost)} (${timeText(rec.minutes)}${rec.station?", "+rec.station.replace(/_/g," "):""}).` : "";
+    add("Gear",it.icon||"🎒",it.name,id,`${it.desc||""} ${s.join(", ")}.${craft}`,it.kind||"");
+  }
+
+  // Map features
+  for (const id in MAP_FEATURES){ const f=MAP_FEATURES[id];
+    const biomes=(f.biomes||[]).map(b=>BIOMES[b]?BIOMES[b].name:b).join(", ");
+    const bits=[];
+    if (f.loot) bits.push(`yields ${inline(f.loot)}`);
+    if (f.underground) bits.push("underground expedition entrance");
+    if (f.renewable) bits.push("renewable");
+    if (f.heal) bits.push(`heals ${f.heal} HP`);
+    if (f.warmth) bits.push(`+${f.warmth} warmth`);
+    if (f.knowledge) bits.push("gives knowledge");
+    if (f.damage) bits.push(`⚠ damage ${f.damage[0]}–${f.damage[1]}`);
+    if (f.energyLoss) bits.push(`⚠ -${f.energyLoss} energy`);
+    if (f.curse) bits.push(`⚠ risk of ${f.curse}`);
+    if (f.hidden) bits.push("hidden until triggered");
+    if (f.event) bits.push("random event");
+    if (f.rare) bits.push("rare");
+    add("Map feature",f.icon,f.name,id,`${f.desc||""} Found in ${biomes}. ${bits.join("; ")}.`,resNamesOf(f.loot)+" "+biomes+(f.hidden?" trap hazard":"")+(f.underground?" underground":""));
+  }
+
+  // Map entities (hostiles, huntable animals, friendlies)
+  for (const id in MAP_ENTITIES){ const m=MAP_ENTITIES[id];
+    const biomes=(m.biomes||[]).map(b=>BIOMES[b]?BIOMES[b].name:b).join(", ");
+    let detail="", extra=biomes;
+    if (m.hostile){ const en=ENEMIES[m.enemy]||{};
+      detail=`Hostile — attacks on contact. HP ${en.hp}, damage ${en.dmg?en.dmg[0]+"–"+en.dmg[1]:"?"}, danger ${en.danger}. Drops ${inline(en.loot)}. Roams ${biomes}.${m.nightOnly?" Appears at night only.":""}`;
+      extra+=" hostile enemy combat "+resNamesOf(en.loot);
+    } else if (m.huntable){
+      detail=`Huntable animal — flees contact; shoot with a bow from 1–3 tiles. Drops ${inline(m.loot)}. Found in ${biomes}.`;
+      extra+=" huntable animal hunt "+resNamesOf(m.loot);
+    } else if (m.friendly){
+      detail=`Friendly NPC — talk, and often recruit by leading them to your campfire. Found in ${biomes}.`;
+      extra+=" friendly npc recruit survivor "+m.friendly;
+    }
+    add("Creature / NPC",m.icon,m.name,id,detail,extra);
+  }
+
+  // Biomes
+  for (const k in BIOMES){ const b=BIOMES[k], tv=TRAVEL[k], flags=[];
+    if (b.blocks) flags.push("impassable"); if (b.hazard) flags.push("hazardous");
+    if (b.radiation) flags.push("radioactive"); if (b.cold) flags.push("cold");
+    if (b.dry) flags.push("arid"); if (b.dark) flags.push("dark"); if (b.safe) flags.push("safe");
+    add("Biome",b.icon||"🗺",b.name,k,`Terrain.${tv?` Travel ${tv[0]}m and ${tv[1]} energy per tile.`:b.blocks?" Blocks movement.":""}${flags.length?` ${flags.join(", ")}.`:""}`);
+  }
+
+  // Traits
+  for (const k in TRAITS) add("Trait","✨",TRAITS[k].label,k,TRAITS[k].effect);
+
+  // Crops
+  for (const k in CROPS){ const c=CROPS[k];
+    add("Crop","🌱",c.name,k,`Grows in ${c.days} base days → ${inline(c.output)}.${c.perennial?" Perennial — regrows without replanting.":""}`); }
+
+  _searchIndex=idx;
+  return idx;
+}
+
+const SEARCH_CAT_ORDER=["Resource","Recipe","Gear","Building","Job","Research","Crop","Map feature","Creature / NPC","Biome","Trait"];
+
+function renderGuideSearchResults(query, container){
+  if (!container) return;
+  const raw=(query||"").trim();
+  const q=raw.toLowerCase();
+  if (q.length<2){
+    container.innerHTML=`<div class="search-empty">Search anything in the game — resources, buildings, jobs, recipes, research, gear, map features, creatures… <br>Try <b>clean water</b>, <b>iron</b>, <b>wolf</b>, <b>medicine</b> or <b>forge</b>.</div>`;
+    return;
+  }
+  const tokens=q.split(/\s+/).filter(Boolean);
+  const hits=buildSearchIndex().filter(e=>tokens.every(t=>e.text.includes(t)));
+  if (!hits.length){ container.innerHTML=`<div class="search-empty">No matches for “${escapeHtml(raw)}”.</div>`; return; }
+  const score=e=>{
+    const n=e.name.toLowerCase(); let s=0;
+    if (n===q) s+=1000; else if (n.startsWith(q)) s+=400; else if (n.includes(q)) s+=200;
+    for (const t of tokens) if (n.includes(t)) s+=40;
+    return s;
+  };
+  hits.sort((a,b)=>score(b)-score(a) || a.name.localeCompare(b.name));
+  const cap=80, shown=hits.slice(0,cap), groups={};
+  for (const e of shown) (groups[e.cat]=groups[e.cat]||[]).push(e);
+  const cats=[...SEARCH_CAT_ORDER.filter(c=>groups[c]), ...Object.keys(groups).filter(c=>!SEARCH_CAT_ORDER.includes(c))];
+  let html=`<div class="search-summary">${hits.length} result${hits.length>1?"s":""}${hits.length>cap?` (showing first ${cap})`:""} for “${escapeHtml(raw)}”</div>`;
+  for (const cat of cats){
+    html+=`<div class="search-cat">${cat} <span class="dim">(${groups[cat].length})</span></div>`;
+    for (const e of groups[cat])
+      html+=`<div class="search-result"><div class="sr-icon">${e.icon}</div><div class="sr-body"><div class="sr-name">${escapeHtml(e.name)}</div><div class="sr-detail">${e.detail}</div></div></div>`;
+  }
+  container.innerHTML=html;
+}
+
 function renderGuideTab(root){
   const c = el("div","card");
   c.innerHTML = `
@@ -862,6 +1183,7 @@ function renderGuideTab(root){
     <div class="muted">Everything you need to know to survive and rebuild. Use the table of contents to jump to a section.</div>
     <div class="guide-toc">
       <a href="#g-overview">Overview</a>
+      <a href="#g-pricing">💰 Prices &amp; Costs</a>
       <a href="#g-controls">Controls</a>
       <a href="#g-needs">Needs &amp; Status</a>
       <a href="#g-actions">Quick Actions</a>
@@ -1069,8 +1391,24 @@ function renderGuideTab(root){
       <h3>💾 Save / Load</h3>
       <p>The game autosaves after every action to your browser's local storage. Use the <b>Save</b> / <b>Load</b> buttons in the header for manual control. <b>Reset</b> wipes your save and starts a new run. If you clear browser data, your run is gone.</p>
     </div>
+    ${guidePriceSection()}
   `;
+
+  // Search card — appended above the guide so it is the first thing you see.
+  const sc = el("div","card guide-search-card");
+  sc.innerHTML = `
+    <h3>🔎 Search the Game</h3>
+    <div class="guide-search"><input type="search" id="guide-search-input" placeholder="Search anything: clean water, iron, wolf, medicine…" autocomplete="off" spellcheck="false"></div>
+    <div id="guide-search-results"></div>
+  `;
+  root.appendChild(sc);
   root.appendChild(c);
+
+  const input = sc.querySelector("#guide-search-input");
+  const results = sc.querySelector("#guide-search-results");
+  input.value = _guideSearch;
+  input.addEventListener("input", ()=>{ _guideSearch = input.value; renderGuideSearchResults(_guideSearch, results); });
+  renderGuideSearchResults(_guideSearch, results);
 }
 
 // ------------------------- HINT SYSTEM ------------------------------
