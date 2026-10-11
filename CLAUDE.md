@@ -35,6 +35,18 @@ node tools/gen-pricing.js
 
 The script reads `js/data.js` (plus a clearly-labelled MIRRORED-FROM-CODE block for values that live in the action code) and **fails loudly** if the game adds content it does not know how to render — e.g. a new building-effect key, an unknown resource, or any entity missing from the output. Do **not** edit `PRICING.md` by hand; edit `tools/gen-pricing.js` instead. The in-game **📖 Guide → Prices & Costs** tab (and its 🔎 search) read the same tables live, so they stay in sync automatically.
 
+## Updating GameActionsPrice.md (required)
+
+`GameActionsPrice.md` is the **hand-written, human-readable** companion to `PRICING.md`: it explains every action's cost in ⏳ time, ⚡ energy, 📦 resources and 🧠 knowledge (walking, crafting, building, farming, scouting, combat, jobs, research, etc.).
+
+**If you change any game data, cost, action, item, enemy, building, job, recipe or mechanic, you must update `GameActionsPrice.md` too** — it is not generated, so nothing else keeps it honest. Steps:
+
+1. Change the data/code.
+2. Update the matching section in `GameActionsPrice.md` (its header has a "Where to look when updating" table mapping each section to its source of truth).
+3. Bump the **Last updated** date at the top of `GameActionsPrice.md`.
+4. Regenerate `PRICING.md` with `node tools/gen-pricing.js`.
+5. Syntax-check touched JS and, ideally, playtest in the browser.
+
 ## Script layout (single `<script>` block in `index.html`)
 
 The script is organized top-to-bottom into the following sections — keep new code in the matching section:

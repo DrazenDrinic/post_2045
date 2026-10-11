@@ -44,7 +44,8 @@ There are no automated tests. Before reporting work as done:
    node tools/gen-pricing.js
    ```
    `PRICING.md` is generated from `js/data.js` (not hand-edited) and the script fails loudly on unrendered content. Edit `tools/gen-pricing.js`, not `PRICING.md`.
-3. If your change is non-trivial, say in your summary that you have NOT manually playtested the change in a browser. Do not claim a feature works without trying it.
+3. If you changed any game data, cost, action, item, enemy, building, job, recipe, or mechanic, you **must** also update `GameActionsPrice.md` (the hand-written human-readable cost reference): edit the matching section, then bump its **Last updated** date at the top. It lists a "Where to look when updating" table mapping each section to its source of truth. It is not generated, so nothing else keeps it in sync.
+4. If your change is non-trivial, say in your summary that you have NOT manually playtested the change in a browser. Do not claim a feature works without trying it.
 
 ## Code map
 

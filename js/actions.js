@@ -655,7 +655,7 @@ function quickActionBlocker(g, actionKey){
     case "pitch_tent": return carriedTool(g,"tent") ? "" : "Carry a portable tent.";
     case "lay_bag": return carriedTool(g,"bedroll") ? "" : "Carry a sleeping bag.";
     case "light_fire": return playerCanPay(g,{wood:1}) ? "" : "Need 1 accessible wood.";
-    case "pack_camp": return g.camps?.[positionKey(g)] ? "" : "No camp here.";
+    case "pack_camp": { const c=g.camps?.[positionKey(g)]; return c && (c.gear.length || c.fuel>0) ? "" : "Nothing to pack up here."; }
     case "lean_to": return playerCanPay(g,{wood:4,fiber:4}) ? "" : "Need 4 wood and 4 fiber.";
     case "survey": return carriedTool(g,"survey") ? "" : "Carry binoculars.";
   }
@@ -909,11 +909,13 @@ function campAction(action){
     if(!playerPay(g,{wood:4,fiber:4})) return;
     camp.leanTo=true; pushLog(g,"Built an improvised lean-to. It stays on this tile.","good");
   } else if(action==="pack_camp"){
+    const hadGear=camp.gear.length>0, hadFire=camp.fuel>0;
     const weight=camp.gear.reduce((s,i)=>s+ITEMS[i.type].weight,0);
     if(packWeight(g)+weight>packCapacity(g)){ pushLog(g,"Free pack space to carry your camping equipment.","warn"); render(); return; }
     g.inventory.gear.push(...camp.gear); camp.gear=[]; camp.fuel=0;
     if(!camp.leanTo) delete g.camps[key];
-    pushLog(g,"Camping gear packed; fire extinguished.","info");
+    const parts=[]; if(hadGear) parts.push("Camping gear packed"); if(hadFire) parts.push("fire extinguished");
+    pushLog(g,(parts.join("; ")||"Camp cleared")+".","info");
   }
   p.energy=clamp(p.energy-1,0,100); passMinutes(g,ACTION_COSTS[action]); render(); save();
 }
@@ -940,7 +942,7 @@ function openSleepDialog(){
   if(G.survivors[0].health<=0 || _combat) return;
   cancelAutoWalk();
   const c=sleepConditions(G), fuel=G.camps[positionKey(G)]?.fuel || 0;
-  showModal({title:"Rest and sleep",body:`<p><b>${c.label}</b> · ${G.weather.type} weather</p>
+  showModal({title:"Rest and sleep",body:`<p><b>${c.label}</b> · ${weatherLabel(G.weather.type)} weather</p>
     <p>Recovery: about ${c.recovery} energy/hour. Current exposure: -${c.loss} warmth/hour.</p>
     <p>Incident risk: about ${Math.round(c.incident*100)}% over 8 hours at current conditions. ${c.watch?"A companion keeps watch.":""}</p>
     <p>Field fire: ${timeText(fuel)} fuel. Accessible supplies: ${fmt(playerAmount(G,"food"))} food, ${fmt(playerAmount(G,"water"))} clean water.</p>
@@ -974,7 +976,14 @@ function sleepFor(minutes,rest=false){
 
 function farmAction(id,action,crop){
   const g=G, f=g.farms.find(f=>f.id===id);
-  if(!f || !atSettlement(g) || _combat || g.survivors[0].health<=0) return;
+  if(!f || _combat || g.survivors[0].health<=0) return;
+  // Choosing a crop is just config; the hands-on actions require you beside the plot.
+  if(action==="select"){
+    if(!atSettlement(g)) return;
+  } else {
+    const near = f.x!=null ? farmPlotAdjacent(g,f) : atSettlement(g);
+    if(!near){ pushLog(g,"Walk next to this plot to tend it.","warn"); render(); return; }
+  }
   if(action==="select" && !f.planted && CROPS[crop]) f.crop=crop;
   else if(action==="plant"){
     if(f.planted || !playerPay(g,{seeds:1})) return;
@@ -1255,6 +1264,21 @@ function assignJob(survId, jobKey){
   }
   pushLog(g, `${s.name} assigned to ${JOBS[jobKey].name}.`,"info");
   render(); save();
+}
+
+// Fill open building slots with the best-matching idle workers.
+function autoAssignIdle(){
+  const g=G; let n=0;
+  for (const id in g.buildings){
+    const b=BUILDINGS[id]; if (!b || !b.workers) continue;
+    const primary=jobsForBuilding(id)[0]; if (!primary) continue;
+    while (openSlots(g,id)>0){
+      const w=bestWorkerFor(g,primary); if (!w) break;
+      assignJob(w.id, primary); n++;
+    }
+    if (!freeWorkers(g).length) break;
+  }
+  if (!n){ pushLog(g,"No idle workers or open slots to fill.","info"); render(); }
 }
 
 // --- Survivors / families ---

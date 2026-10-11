@@ -486,7 +486,7 @@ function openTileActionDialog(g, x, y){
     buttons.push({label:"Walk here", primary:true, action:()=>{ closeModal(); startAutoWalk(x,y); }});
   }
   if (feature && !feature.hidden){
-    const minutes=feature.underground?null:featureMinutes(g,t.feature.type);
+    const minutes=feature.underground?null:featureMinutes(g,tile.feature.type);
     buttons.push({label:dist<=1 ? `Search / use${minutes!=null?` (${timeText(minutes)})`:""}` : "Walk closer to search", action:()=>{
       closeModal();
       if (dist<=1){ handleFeature(g, tile, x, y); render(); save(); }
@@ -1327,10 +1327,31 @@ function searchNearby(){
     return false;
   });
   if(!spots.length){ pushLog(g,"No visible feature in reach.","info"); render(); return; }
-  showModal({title:"Search nearby",body:"<p>Harvesting and searching take time and use carried tools. Minerals need a pickaxe; deep routes need light.</p>",buttons:[
-    ...spots.map(s=>({label:MAP_FEATURES[s.t.feature.type].name,action:()=>{closeModal();openTileActionDialog(g,s.x,s.y);}})),
+  showModal({title:"Search nearby",body:"<p>Harvesting and searching take time and use carried tools. Minerals go faster with a pickaxe; deep routes need light.</p>",buttons:[
+    ...spots.map(s=>({label:searchNearbyLabel(g,s.t.feature.type),action:()=>{
+      closeModal();
+      handleFeature(g,s.t,s.x,s.y); // routes underground entrances to their own dialog
+      render(); save();
+    }})),
     {label:"Cancel",action:closeModal}
   ]});
+}
+
+// Button label for a nearby feature: "🪨 Stone Outcrop — 2–5 stone · 30m".
+function searchNearbyLabel(g,type){
+  const f=MAP_FEATURES[type];
+  let label=`${f.icon} ${f.name}`;
+  if(f.underground) return `${label} — enter`;
+  const bits=[];
+  if(f.loot){
+    const parts=[];
+    for(const r in f.loot){ const [lo,hi]=f.loot[r]; parts.push(`${lo===hi?lo:lo+"–"+hi} ${RESOURCES[r]?RESOURCES[r].name.toLowerCase():r}`); }
+    if(parts.length) bits.push(parts.join(", "));
+  }
+  if(f.heal) bits.push(`+${f.heal} HP`);
+  if(f.warmth) bits.push(`+${f.warmth} warmth`);
+  bits.push(timeText(featureMinutes(g,type)));
+  return `${label} — ${bits.join(" · ")}`;
 }
 
 function previewRoute(x,y){

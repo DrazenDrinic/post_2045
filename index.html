@@ -19,14 +19,14 @@ window.addEventListener("DOMContentLoaded", function(){
   <header>
     <h1>POST 2045</h1>
     <div class="topstats">
-      <span>Day <b id="hud-day">1</b></span>
-      <span id="hud-phase">Morning</span>
-      <span>Clock: <b id="hud-clock">06:00</b></span>
-      <span id="hud-weather">clear</span>
-      <span>Pop: <b id="hud-pop">1</b></span>
-      <span>Danger: <b id="hud-danger">0</b></span>
-      <span>Rep: <b id="hud-rep">0</b></span>
-      <span>Knowledge: <b id="hud-know">0</b></span>
+      <span class="stat" title="In-game day"><span class="ico">📅</span>Day <b id="hud-day">1</b></span>
+      <span class="stat" title="Time of day (4 phases per day)"><span class="ico" id="hud-phase-ico">🌅</span><span id="hud-phase">Morning</span></span>
+      <span class="stat" title="In-game clock"><span class="ico">🕐</span>Clock <b id="hud-clock">06:00</b></span>
+      <span class="stat" title="Weather"><span class="ico" id="hud-weather-ico">🌤</span><span id="hud-weather">clear</span></span>
+      <span class="stat" title="Population — survivors in the settlement"><span class="ico">👥</span>Population <b id="hud-pop">1</b></span>
+      <span class="stat" title="Danger — rises with growth, cut by walls & guards; drives raids"><span class="ico">⚠️</span>Danger <b id="hud-danger">0</b></span>
+      <span class="stat" title="Reputation — helps attract traders and survivors"><span class="ico">🤝</span>Reputation <b id="hud-rep">0</b></span>
+      <span class="stat" title="Knowledge — research currency"><span class="ico">📚</span>Knowledge <b id="hud-know">0</b></span>
     </div>
     <div class="ctrls">
       <button id="btn-rest" title="Inspect shelter, exposure and sleep duration">Sleep</button>

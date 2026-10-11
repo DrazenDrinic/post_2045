@@ -28,15 +28,22 @@ function renderHeader(){
   document.getElementById("hud-phase").textContent = PHASES[g.phase];
   document.getElementById("hud-clock").textContent = gameClockLabel(g);
   document.getElementById("hud-pop").textContent = g.survivors.length;
-  document.getElementById("hud-danger").textContent = settlementDanger(g);
+  const dangerEl = document.getElementById("hud-danger");
+  const dng = settlementDanger(g);
+  dangerEl.textContent = dng;
+  dangerEl.className = dng > 30 ? "bad" : dng > 15 ? "warn" : "good";
   document.getElementById("hud-rep").textContent = Math.round(g.reputation*10)/10;
   document.getElementById("hud-know").textContent = Math.floor(g.knowledge*10)/10;
+  const phaseIco = document.getElementById("hud-phase-ico");
+  if (phaseIco) phaseIco.textContent = ["🌅","☀️","🌇","🌙"][g.phase] || "🌅";
+  const weatherIco = document.getElementById("hud-weather-ico");
+  if (weatherIco) weatherIco.textContent = {clear:"🌤", rain:"🌧", cold:"❄️"}[g.weather.type] || "🌤";
   const rt = document.getElementById("btn-rt");
   const sp = document.getElementById("btn-speed");
   if (rt) rt.textContent = _rtSpeed ? "Live" : "Paused";
   if (sp) sp.textContent = (_rtSpeed || 1) + "x";
   const weather=document.getElementById("hud-weather");
-  if(weather) weather.textContent=g.weather.type;
+  if(weather) weather.textContent=weatherLabel(g.weather.type);
 }
 
 // ------------------------- CONTEXT-MENU PROVIDERS ------------------------------
@@ -81,7 +88,7 @@ function resourceContext(g, k){
   return { title: `${r.icon} ${r.name}`, info, actions: [] };
 }
 
-function townBuildingContext(g, id){
+function townBuildingContext(g, id, wx, wy){
   const b = BUILDINGS[id]; if (!b) return null;
   const count = g.buildings[id]?.count || 1;
   const assigned = (g.workerAssign[id] || []).length;
@@ -90,9 +97,17 @@ function townBuildingContext(g, id){
     + `<br>Built ${g.buildings[id]?.count||0}/${b.max}`
     + (b.workers ? ` · workers ${assigned}/${b.workers*count}` : "")
     + (dmg ? `<br><span class="warn">Damaged (${Math.round(dmg)})</span>` : "");
-  const actions = [];
-  if (b.workers) actions.push({ label: "Assign workers", sub: "Jobs tab", action: ()=>{ _activeTab="jobs"; render(); } });
-  actions.push({ label: "Build more", sub: "Build tab", action: ()=>{ _activeTab="build"; render(); } });
+  const actions = [{ label: "Manage / inspect", action: ()=>openBuildingDialog(g, id, wx, wy) }];
+  if (b.workers){
+    const open = openSlots(g, id), free = freeWorkers(g).length;
+    actions.push({ label: "Assign worker", disabled: open<=0 || !free, title: open<=0?"No open slot":!free?"No idle workers":"", action: ()=>openWorkerPicker(g, id) });
+  }
+  if (b.effects?.farm && wx!=null){
+    const f = farmAt(g, wx, wy);
+    if (f) actions.push(farmPlotAdjacent(g,f)
+      ? { label: "Tend this plot", action: ()=>openBuildingDialog(g, id, wx, wy) }
+      : { label: "Walk to plot", action: ()=>startAutoWalk(wx, wy) });
+  }
   return { title: `${b.icon||""} ${b.name}`, info, actions };
 }
 
@@ -118,11 +133,135 @@ function survivorContext(g, s){
     + (partner ? `<br>💍 ${escapeHtml(partner.name)}` : heart ? `<br>❤ Heart ${heart}/100` : "")
     + (s.diseased ? `<br><span class="bad">🤒 Diseased</span>` : "") + (s.injured ? `<br><span class="warn">🩹 Injured</span>` : "");
   const actions = [];
-  if (!s.isPlayer && !s.isChild) actions.push({ label: "Assign job", sub: "Jobs tab", action: ()=>{ _activeTab="jobs"; render(); } });
+  if (!s.isPlayer && !s.isChild) actions.push({ label: "Assign job…", sub: JOBS[g.jobs?.[s.id]||"none"].name, action: ()=>openJobPicker(g, s.id) });
   if (typeof eligibleForCourtship === "function" && eligibleForCourtship(g, s)) actions.push({ label: "Court", sub: "30 min", action: ()=>courtSurvivor(s.id) });
   if (heart >= 100 && !partner) actions.push({ label: "Marry", action: ()=>marrySurvivor(s.id) });
   if (s.isPlayer && s.diseased) actions.push({ label: "Treat illness", sub: "1 medicine", action: ()=>useMedicine() });
   return { title: `${s.isPlayer?"⭐ ":""}${escapeHtml(s.name)}`, info, actions };
+}
+
+const ACTION_LABELS = {
+  eat:"Eat", cook:"Cook", gather:"Forage", drink:"Drink", fetch_water:"Fetch water",
+  boil_water:"Boil water", purify_water:"Filter water", rest:"Rest", sleep:"Sleep",
+  gather_spirits:"Gather spirits", warm_fire:"Warm up", light_fire:"Fuel fire", bandage:"Bandage",
+};
+function needActionButton(g, k){
+  const b = quickActionBlocker(g, k);
+  const icon = QUICK_ACTION_ICONS[k] || (k==="sleep" ? "🛏️" : "⚡");
+  return { label: `${icon} ${ACTION_LABELS[k] || k}`, disabled: !!b, title: b || "", action: ()=>playerAction(k) };
+}
+
+// Right-click a stat bar → what it means, its state, a tip, and one-click fixes.
+function needContext(g, need){
+  const p = g.survivors[0]; if (!p) return null;
+  const META = {
+    health:    { icon:"❤", label:"Health",    max:p.maxHealth, desc:"At 0 you die. Low hunger, thirst or warmth and disease all chip away at it.", tip:"Rest, bandage wounds, use medicine, or soak in a hot spring (♨).", acts:["bandage","rest"] },
+    hunger:    { icon:"🍞", label:"Hunger",    max:100, desc:"Falls about 4 each phase; under 15 it starts damaging health.", tip:"Eat food or cook a meal; forage or hunt when stores run low.", acts:["eat","cook","gather"] },
+    thirst:    { icon:"💧", label:"Thirst",    max:100, desc:"Falls about 5 each phase — your fastest need; under 15 it damages health.", tip:"Drink clean water. Dirty water risks illness (15%) — boil or filter it first.", acts:["drink","fetch_water","boil_water","purify_water"] },
+    energy:    { icon:"⚡", label:"Energy",    max:100, desc:"Every action and step costs energy; under 5 you're too exhausted to act.", tip:"Rest for a quick +7, or Sleep for a full recovery (shelter and a fire help).", acts:["rest","sleep"] },
+    happiness: { icon:"😊", label:"Happiness", max:100, desc:"Hurt by hunger, thirst and cold; lifted by company and comforts. Low happiness cuts worker output.", tip:"Gather spirits, keep needs met, and build an inn, tavern or bathhouse.", acts:["gather_spirits"] },
+    safety:    { icon:"🛡", label:"Safety",    max:100, desc:"Settlement-wide protection. Low safety drags down morale and invites raids.", tip:"Build guard posts, palisades and watchtowers, and assign guards.", acts:[], tab:"build" },
+    morale:    { icon:"✨", label:"Morale",    max:100, desc:"Averages your happiness and settlement safety. Shrines, halls and the town hall raise it.", tip:"Keep people happy and safe; Gather Spirits gives a quick lift.", acts:["gather_spirits"] },
+    warmth:    { icon:"🔥", label:"Warmth",    max:100, desc:"Drops at night and in snow (up to 6/phase); under 15 it damages health.", tip:"Warm up at a fueled fire (build or fuel one in the field) and equip a warm coat.", acts:["warm_fire","light_fire"] },
+  };
+  const m = META[need]; if (!m) return null;
+  const v = Math.round(p[need] || 0);
+  const state = v<15 ? `<span class="bad">critically low</span>` : v<30 ? `<span class="warn">low</span>` : v>=70 ? `<span class="good">good</span>` : "steady";
+  const info = `<b>${v}/${m.max}</b> · ${state}<br>${m.desc}<br><b>Tip:</b> ${m.tip}`;
+  const actions = m.acts.map(k=>needActionButton(g,k));
+  if (need==="health" && p.diseased){
+    const hasMed = playerAmount(g,"medicine")>=1;
+    actions.unshift({ label:"💊 Treat illness", disabled:!hasMed, title:hasMed?"":"Need 1 medicine.", action:()=>useMedicine() });
+  }
+  if (m.tab) actions.push({ label:"🏗 Open Build tab", action:()=>{ _activeTab=m.tab; render(); } });
+  return { title:`${m.icon} ${m.label}`, info, actions };
+}
+
+// ------------------------- BUILDING / WORKER / JOB DIALOGS ------------------------------
+
+// Pick a survivor to staff a building (choosing the role first if it has several).
+function openWorkerPicker(g, id, jobKey){
+  const b = BUILDINGS[id]; if (!b) return;
+  const roles = jobsForBuilding(id);
+  if (!roles.length){ pushLog(g, `${b.name} has no worker roles.`, "info"); render(); return; }
+  if (!jobKey && roles.length>1){
+    showModal({ title:`Staff the ${b.name}`, body:`<p class="muted">Choose a role — ${openSlots(g,id)} open slot(s).</p>`, buttons:[
+      ...roles.map(rk=>({ label:`${JOBS[rk].name}`, action:()=>{ closeModal(); openWorkerPicker(g, id, rk); } })),
+      { label:"Cancel", action:closeModal },
+    ]});
+    return;
+  }
+  const role = jobKey || roles[0];
+  if (openSlots(g,id)<=0){ pushLog(g, `${b.name}: no open worker slot.`, "warn"); render(); return; }
+  const cands = eligibleWorkers(g, role);
+  if (!cands.length){ pushLog(g, "No survivors available to assign.", "warn"); render(); return; }
+  showModal({ title:`Assign to ${b.name} — ${JOBS[role].name}`, body:`<p class="muted">Idle workers first. ⭐ marks a good trait match.</p>`, buttons:[
+    ...cands.map(({s,free,match})=>({
+      label:`${match?"⭐ ":""}${s.name}${free?"":` (now ${JOBS[g.jobs[s.id]]?.name||"idle"})`}`,
+      action:()=>{ closeModal(); assignJob(s.id, role); },
+    })),
+    { label:"Cancel", action:closeModal },
+  ]});
+}
+
+// Manage a placed building: workers (assign/unassign) and farm-plot actions.
+function openBuildingDialog(g, id, wx, wy){
+  const b = BUILDINGS[id]; if (!b) return;
+  const built = g.buildings[id]?.count || 0;
+  const lines = [`<p>${escapeHtml(b.desc||"")}</p>`, `<p><b>Effect:</b> ${buildingYieldText(b)}</p>`];
+  const buttons = [];
+  if (b.workers){
+    const assigned = (g.workerAssign[id] || []);
+    lines.push(`<p><b>Workers:</b> ${assigned.length}/${b.workers*built}${assigned.length?" — "+assigned.map(uid=>survivorById(g,uid)?.name).filter(Boolean).join(", "):""}</p>`);
+    const open = openSlots(g,id), free = freeWorkers(g).length;
+    buttons.push({ label:"Assign worker", primary:true, disabled:open<=0||!free, title:open<=0?"No open slot":!free?"No idle workers":"", action:()=>{ closeModal(); openWorkerPicker(g, id); } });
+    for (const uid of assigned){ const s = survivorById(g,uid); if (!s) continue;
+      buttons.push({ label:`✕ ${s.name}`, action:()=>{ closeModal(); assignJob(uid, "none"); } });
+    }
+  }
+  if (b.effects?.farm && wx!=null){
+    const f = farmAt(g, wx, wy);
+    if (f){
+      const crop = CROPS[f.crop];
+      lines.push(`<p><b>Plot:</b> ${crop.name} — ${f.planted?(f.growth>=100?"ready to harvest":`growing ${Math.round(f.growth)}%`):"unplanted"} · moisture ${Math.round(f.water)} · fertility ${Math.round(f.fertility)}</p>`);
+      if (!farmPlotAdjacent(g,f)){
+        lines.push(`<p class="warn">Walk next to the plot to tend it.</p>`);
+        buttons.push({ label:"Walk to plot", primary:true, action:()=>{ closeModal(); startAutoWalk(wx, wy); } });
+      } else {
+        const add=(label,act,disabled,title)=>buttons.push({ label, disabled, title:title||"", action:()=>{ closeModal(); farmAction(f.id, act); } });
+        if (!f.planted) add("Plant (1 seed)","plant", playerAmount(g,"seeds")<1, "Need a seed");
+        if (f.planted) add("Water (1)","water", f.water>=100||playerAmount(g,"water")<1, "Need clean water");
+        add("Compost (1)","fertilize", f.fertility>=100||playerAmount(g,"compost")<1, "Need compost");
+        if (f.growth>=100) add("Harvest","harvest", false);
+        if (!f.fenced) add("Fence (4 wood)","fence", playerAmount(g,"wood")<4, "Need 4 wood");
+        if (!f.irrigated) add("Irrigate","irrigate", !playerCanPay(g,{wood:4,clay:4,rope:1}), "Need 4 wood, 4 clay, 1 rope");
+      }
+    }
+  }
+  buttons.push({ label:"Close", action:closeModal });
+  showModal({ title:`${b.icon||""} ${b.name}`, body:lines.join(""), buttons });
+}
+
+// Change a survivor's job via a dropdown (same options as the Jobs tab).
+function openJobPicker(g, survId){
+  const s = survivorById(g, survId); if (!s || s.isPlayer || s.isChild) return;
+  const cur = g.jobs[s.id] || "none";
+  const root = document.getElementById("modal-root"); root.innerHTML = "";
+  const bg = el("div","modal-bg"), m = el("div","modal");
+  m.innerHTML = `<h2>${escapeHtml(s.name)} — job</h2><div class="body"><p class="muted">Current: <b>${JOBS[cur].name}</b>. Building jobs need an open slot.</p></div>`;
+  const sel = el("select");
+  for (const jk of JOB_KEYS){
+    const j = JOBS[jk]; const ok = jk==="none" || jobAvailable(g,jk) || jk===cur;
+    const o = el("option","",`${j.name}${j.building?" ("+BUILDINGS[j.building].name+")":""}`);
+    o.value = jk; if (jk===cur) o.selected = true; if (!ok) o.disabled = true;
+    sel.appendChild(o);
+  }
+  m.querySelector(".body").appendChild(sel);
+  const acts = el("div","actions");
+  const ok = el("button","primary","Assign"); ok.onclick = ()=>{ assignJob(s.id, sel.value); closeModal(); };
+  const cancel = el("button","","Cancel"); cancel.onclick = closeModal;
+  acts.appendChild(ok); acts.appendChild(cancel); m.appendChild(acts);
+  bg.appendChild(m); root.appendChild(bg);
 }
 
 function renderLeft(){
@@ -146,6 +285,12 @@ function renderLeft(){
     </div>
     ${p.diseased? '<div class="bad" style="margin-top:4px">🤒 Diseased</div>' : ""}
     ${p.injured? '<div class="warn" style="margin-top:4px">🩹 Injured</div>' : ""}`;
+  const NEED_ORDER = ["health","hunger","thirst","energy","happiness","safety","morale","warmth"];
+  ch.querySelectorAll(".bar").forEach((barEl,i)=>{
+    const need = NEED_ORDER[i]; if (!need) return;
+    barEl.style.cursor = "help"; barEl.title = "Right-click for tips";
+    barEl.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, needContext(G, need)); };
+  });
   root.appendChild(ch);
   const expedition=el("div","card",`<h3>Expedition</h3><div class="${packWeight(g)>packCapacity(g)*0.9?"warn":"info"}">Pack: ${fmt(packWeight(g))} / ${packCapacity(g)} load</div><div>${atSettlement(g)?"Town supplies accessible":"Using carried supplies"}</div><div class="muted">${compassLabel(g)}</div><div>${sleepConditions(g).label}</div>`);
   const inventoryButton=el("button","small","Open inventory"); inventoryButton.onclick=()=>{_activeTab="inventory";render();}; expedition.appendChild(inventoryButton);
@@ -671,8 +816,11 @@ function renderTownTab(root){
           <span class="building-icon">${b?.icon || "?"}</span>
           <span class="building-name">${b?.name || slot.building}</span>
         </div>`;
-        cell.title = b ? `${b.name}: ${b.desc} (right-click for details)` : slot.building;
-        cell.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, townBuildingContext(g, slot.building)); };
+        const wx = g.villageX + x - cx, wy = g.villageY + y - cy;
+        cell.title = b ? `${b.name}: ${b.desc} — click to manage` : slot.building;
+        cell.style.cursor = "pointer";
+        cell.onclick = ()=>{ if (_buildToPlace) return; openBuildingDialog(g, slot.building, wx, wy); };
+        cell.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, townBuildingContext(g, slot.building, wx, wy)); };
       } else {
         if (_buildToPlace) {
           const b = BUILDINGS[_buildToPlace];
@@ -796,6 +944,13 @@ function renderSurvivorsTab(root){
       row.appendChild(marry);
       div.appendChild(row);
     }
+    if (!s.isPlayer && !s.isChild){
+      const jrow = el("div", "row");
+      const jb = el("button", "small", `Change job (${JOBS[s.job||"none"].name})`);
+      jb.onclick = ()=> openJobPicker(g, s.id);
+      jrow.appendChild(jb);
+      div.appendChild(jrow);
+    }
     c.appendChild(div);
   }
   root.appendChild(c);
@@ -860,17 +1015,37 @@ function renderJobsTab(root){
 
   // Building worker assignments
   const wc = el("div","card");
+  const idle = freeWorkers(g).length;
   wc.innerHTML = `<h3>🏠 Worker Slots</h3>`;
+  const head = el("div","row");
+  head.appendChild(el("div","muted grow", idle ? `${idle} idle worker${idle>1?"s":""} available. Click a building to staff it.` : "No idle workers right now."));
+  const autoBtn = el("button","small primary","Auto-assign idle"); autoBtn.disabled = !idle; autoBtn.title = idle ? "Fill open slots with the best-matching idle workers" : "No idle workers"; autoBtn.onclick = autoAssignIdle;
+  head.appendChild(autoBtn);
+  wc.appendChild(head);
+  let anySlots = false;
   for (const id in g.buildings){
-    const b = BUILDINGS[id]; if (!b) continue;
-    if (!b.workers) continue;
+    const b = BUILDINGS[id]; if (!b || !b.workers || !g.buildings[id].count) continue;
+    anySlots = true;
     const slots = b.workers * g.buildings[id].count;
-    const used = (g.workerAssign[id]||[]).length;
+    const assigned = (g.workerAssign[id]||[]);
     const item = el("div","item");
-    item.innerHTML = `<div class="head"><span class="name">${b.icon} ${b.name}</span> <span class="meta">${used}/${slots} workers</span></div>
-      <div class="desc">${(g.workerAssign[id]||[]).map(uid=>survivorById(g,uid)?.name).filter(Boolean).join(", ") || "(none)"}</div>`;
+    item.innerHTML = `<div class="head"><span class="name">${b.icon} ${b.name}</span> <span class="meta">${assigned.length}/${slots} workers</span></div>`;
+    const workerRow = el("div","row");
+    for (const uid of assigned){ const s = survivorById(g,uid); if (!s) continue;
+      const chip = el("button","small",`✕ ${s.name}`); chip.title = "Unassign"; chip.onclick = ()=>assignJob(uid,"none");
+      workerRow.appendChild(chip);
+    }
+    if (!assigned.length) workerRow.appendChild(el("span","desc","(none)"));
+    item.appendChild(workerRow);
+    const open = openSlots(g,id);
+    const assignBtn = el("button","small primary","+ Assign worker");
+    assignBtn.disabled = open<=0 || !freeWorkers(g).length;
+    assignBtn.title = open<=0 ? "No open slot" : !freeWorkers(g).length ? "No idle workers" : "";
+    assignBtn.onclick = ()=>openWorkerPicker(g, id);
+    item.appendChild(assignBtn);
     wc.appendChild(item);
   }
+  if (!anySlots) wc.appendChild(el("div","muted","Build a workplace (well, garden, workshop…) to open worker slots."));
   root.appendChild(wc);
   renderProductionOrders(root);
 }
@@ -1760,7 +1935,7 @@ function renderCraftingTab(root){
   card.appendChild(grid);root.appendChild(card);
 }
 function renderFarmsTab(root){
-  const g=G,card=el("div","card",`<h3>Farming · ${g.weather.type} weather</h3><p class="muted">Plant one seed, keep soil moist, and harvest mature crops. Farmers tend one plot each, harvest and replant automatically. Seed Savers instead turn crops into seeds. Greenhouses double yield and protect growth from cold.</p>`);
+  const g=G,card=el("div","card",`<h3>Farming · ${weatherLabel(g.weather.type)} weather</h3><p class="muted">Plant one seed, keep soil moist, and harvest mature crops. Farmers tend one plot each, harvest and replant automatically. Seed Savers instead turn crops into seeds. Greenhouses double yield and protect growth from cold.</p>`);
   if(!g.farms.length) card.appendChild(el("p","muted","Build a Garden Plot to begin. Early gardens can be tended by hand; a hoe speeds up planting."));
   const grid=el("div","grid2");
   for(const f of g.farms){
@@ -1768,13 +1943,19 @@ function renderFarmsTab(root){
     const item=el("div","item",`<div class="name">${BUILDINGS[f.building].name} · ${crop.name}</div><div class="meta">${f.planted?(f.growth>=100?"Ready to harvest":"Growing"):"Unplanted"} · base ${crop.days} days</div>${bar("Growth",f.growth,100,"var(--good)")}${bar("Moisture",f.water,100,"var(--thirst)")}${bar("Fertility",f.fertility,100,"var(--accent)")}<div class="desc">Harvest: ${Object.entries(crop.output).map(([k,v])=>`${v} ${RESOURCES[k].name}`).join(", ")} (garden yield)</div>`);
     const select=el("select");for(const [k,c] of Object.entries(CROPS)){const o=el("option","",c.name);o.value=k;o.selected=k===f.crop;select.appendChild(o);}
     select.disabled=f.planted || !atSettlement(g);select.onchange=()=>farmAction(f.id,"select",select.value);item.appendChild(select);
-    const home=atSettlement(g);
-    appendButton(item,"Plant (1 seed)",()=>farmAction(f.id,"plant"),!home || f.planted || playerAmount(g,"seeds")<1);
-    appendButton(item,"Water (1)",()=>farmAction(f.id,"water"),!home || f.water>=100 || playerAmount(g,"water")<1);
-    appendButton(item,"Compost (1)",()=>farmAction(f.id,"fertilize"),!home || f.fertility>=100 || playerAmount(g,"compost")<1);
-    appendButton(item,"Harvest",()=>farmAction(f.id,"harvest"),!home || f.growth<100);
-    appendButton(item,f.fenced?"Fenced":"Fence (4 wood)",()=>farmAction(f.id,"fence"),!home || f.fenced || playerAmount(g,"wood")<4);
-    appendButton(item,f.irrigated?"Irrigated":"Irrigate (4 wood, 4 clay, rope)",()=>farmAction(f.id,"irrigate"),!home || f.irrigated || !playerCanPay(g,{wood:4,clay:4,rope:1}));
+    const near = f.x!=null ? farmPlotAdjacent(g,f) : atSettlement(g);
+    if (f.x!=null && !near){
+      const dist = Math.max(Math.abs(g.playerX-f.x), Math.abs(g.playerY-f.y));
+      item.appendChild(el("div","desc warn",`Walk next to this plot to tend it (${dist} tile${dist===1?"":"s"} away).`));
+      appendButton(item,"Walk to plot",()=>{ _activeTab="map"; startAutoWalk(f.x,f.y); },false);
+    } else {
+      appendButton(item,"Plant (1 seed)",()=>farmAction(f.id,"plant"),!near || f.planted || playerAmount(g,"seeds")<1);
+      appendButton(item,"Water (1)",()=>farmAction(f.id,"water"),!near || f.water>=100 || playerAmount(g,"water")<1);
+      appendButton(item,"Compost (1)",()=>farmAction(f.id,"fertilize"),!near || f.fertility>=100 || playerAmount(g,"compost")<1);
+      appendButton(item,"Harvest",()=>farmAction(f.id,"harvest"),!near || f.growth<100);
+      appendButton(item,f.fenced?"Fenced":"Fence (4 wood)",()=>farmAction(f.id,"fence"),!near || f.fenced || playerAmount(g,"wood")<4);
+      appendButton(item,f.irrigated?"Irrigated":"Irrigate (4 wood, 4 clay, rope)",()=>farmAction(f.id,"irrigate"),!near || f.irrigated || !playerCanPay(g,{wood:4,clay:4,rope:1}));
+    }
     item.appendChild(el("div","muted",`Irrigation uses 0.25 stored water per phase when needed (dirty preferred). ${f.growth>=100?"Harvest waits if town storage is full.":""}`));
     grid.appendChild(item);
   }

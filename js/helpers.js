@@ -144,6 +144,50 @@ function jobAvailable(g, jobKey){
   return true;
 }
 
+// ---- Worker / plot helpers (direct in-place assignment & farming) ----------
+// Preferred trait per building, mirroring the bonus rules in workerJobBonus/getJobBonus.
+const BUILDING_TRAIT = {
+  garden:"farmer", crop_field:"farmer", greenhouse:"farmer", animal_stable:"farmer",
+  chicken_coop:"farmer", goat_pen:"farmer",
+  clinic:"medic", herbalist:"medic", medicine_workshop:"medic",
+  hunting_lodge:"hunter",
+  workshop:"builder", toolsmith:"builder", forge:"builder", carpenter:"builder",
+  sawmill:"builder", crafting_table:"builder", furnace:"builder",
+  mechanics_shed:"mechanic", repair_station:"mechanic",
+  kitchen:"cook", smokehouse:"cook", brewery:"cook",
+  guard_post:"guard", watchtower:"guard", barracks:"guard", training_yard:"guard", scout_camp:"guard",
+  school:"teacher", library:"teacher",
+};
+function jobsForBuilding(id){ return JOB_KEYS.filter(k=>JOBS[k].building===id); }
+function jobPreferredTrait(jobKey){ const j=JOBS[jobKey]; return j && j.building ? BUILDING_TRAIT[j.building] : null; }
+function freeWorkers(g){ return adults(g).filter(s=>!s.isPlayer && !s.isChild && s.health>0 && (!g.jobs[s.id] || g.jobs[s.id]==="none")); }
+function eligibleWorkers(g, jobKey){
+  const pref=jobPreferredTrait(jobKey);
+  return adults(g).filter(s=>!s.isPlayer && !s.isChild && s.health>0)
+    .map(s=>({s, free:(!g.jobs[s.id] || g.jobs[s.id]==="none"), match:!!(pref && s.traits.includes(pref))}))
+    .sort((a,b)=> (b.free-a.free) || (b.match-a.match) || a.s.name.localeCompare(b.s.name));
+}
+function bestWorkerFor(g, jobKey){
+  const free=freeWorkers(g); if(!free.length) return null;
+  const pref=jobPreferredTrait(jobKey);
+  let best=null, score=-Infinity;
+  for(const s of free){
+    let sc=0;
+    if(pref && s.traits.includes(pref)) sc+=2;
+    if(s.traits.includes("hardworking")) sc+=1;
+    if(s.traits.includes("lazy")) sc-=1;
+    if(s.health>=50) sc+=0.1;
+    if(sc>score){ score=sc; best=s; }
+  }
+  return best;
+}
+function openSlots(g, id){
+  const b=BUILDINGS[id]; if(!b || !b.workers) return 0;
+  return b.workers*(g.buildings[id]?.count || 0) - (g.workerAssign[id]||[]).length;
+}
+function farmAt(g, x, y){ return (g.farms||[]).find(f=>f.x===x && f.y===y) || null; }
+function farmPlotAdjacent(g, f){ return !!f && f.x!=null && Math.max(Math.abs(g.playerX-f.x), Math.abs(g.playerY-f.y))<=1; }
+
 function settlementDanger(g){
   let d = 0;
   d += g.survivors.length * 1.2;
@@ -194,6 +238,7 @@ function nightMinutesDuring(g,minutes){
   return dark;
 }
 function timeText(minutes){ return minutes>=60 ? `${fmt(minutes/60)}h` : `${Math.round(minutes)}m`; }
+function weatherLabel(type){ return ({clear:"Clear", rain:"Rain", cold:"Cold"})[type] || "Clear"; }
 function resourceWeight(key){ return RESOURCE_WEIGHTS[key] ?? 0.3; }
 function equippedItem(g, slot){
   return (g.inventory?.gear || []).find(i=>i.id===g.equipment?.[slot] && (i.durability==null || i.durability>0)) || null;

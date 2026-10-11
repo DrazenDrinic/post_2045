@@ -165,6 +165,19 @@ function normalizeExpedition(g){
     g.farms = g.farms.filter(f=>f.building!==id).concat(current);
   }
   g.farms = g.farms.filter(f=>["garden","crop_field","greenhouse"].includes(f.building));
+  // Bind each plot record to the world tile of its building, for proximity gating.
+  if (g.map){
+    for (const id of ["garden","crop_field","greenhouse"]){
+      const tiles=[];
+      for (let y=Math.max(0,g.villageY-7); y<=Math.min(MAP_H-1,g.villageY+7); y++)
+        for (let x=Math.max(0,g.villageX-10); x<=Math.min(MAP_W-1,g.villageX+10); x++)
+          if (g.map[y] && g.map[y][x] && g.map[y][x].settlementBuilding===id) tiles.push({x,y});
+      tiles.sort((a,b)=>a.y-b.y || a.x-b.x);
+      g.farms.filter(f=>f.building===id).forEach((f,i)=>{
+        if (tiles[i]){ f.x=tiles[i].x; f.y=tiles[i].y; } else { f.x=null; f.y=null; }
+      });
+    }
+  }
   for (const f of g.farms){
     if (!CROPS[f.crop]) f.crop = "vegetables";
     f.growth = clamp(Number(f.growth)||0,0,100); f.water = clamp(Number(f.water)||0,0,100); f.fertility = clamp(Number(f.fertility)||0,0,100);
