@@ -154,6 +154,14 @@
   .quick-group .actgrp{margin-top:4px}
   .inventory-row{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--line)}
   .inventory-row .row{gap:4px}
+  /* Pack ⇄ Base side-by-side transfer grid */
+  .transfer-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;align-items:start}
+  .transfer-head{font-weight:bold;color:var(--accent);padding:3px 4px;border-bottom:1px solid var(--line);position:sticky;top:0}
+  .transfer-cell{background:#11161a;border:1px solid var(--line);border-radius:3px;padding:6px}
+  .transfer-cell.pack{border-left:3px solid var(--accent2)}
+  .transfer-cell.base{border-left:3px solid var(--info)}
+  .transfer-cell .row{margin-top:5px;gap:4px}
+  @media (max-width:760px){ .transfer-cell .row button{padding:2px 5px;font-size:11px} }
   .quantity{width:70px;background:var(--bg);border:1px solid var(--line2);color:var(--text);font:inherit;padding:4px;margin:4px}
   .map-marker{position:absolute;top:0;right:1px;font-size:10px;font-weight:bold;background:var(--bg);color:var(--accent);z-index:4}
   .modal .actions{flex-wrap:wrap}
@@ -168,8 +176,9 @@
 
   /* Map system */
   .map-wrap{display:flex;flex-direction:column;gap:8px}
-  .map-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:11px}
+  .map-controls{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;background:var(--card);padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:11px}
   .map-controls .legend{color:var(--muted)}
+  .map-stat{padding:2px 6px;background:var(--bg3);border:1px solid var(--line);border-radius:3px;white-space:nowrap;cursor:help}
   .followers-strip{display:flex;gap:4px;flex-wrap:wrap;align-items:center;font-size:11px;background:var(--card);padding:6px;border:1px solid var(--line);border-radius:4px}
   .followers-strip .ftag{background:#2d2418;color:var(--accent);padding:2px 6px;border-radius:8px;border:1px solid var(--accent2)}
   .map-stage{position:relative;width:max-content;margin:0 auto}
@@ -310,3 +319,15 @@
   .price-table th,.price-table td{text-align:left;padding:3px 7px;border-bottom:1px solid var(--line);vertical-align:top}
   .price-table th{color:var(--muted);font-weight:normal;white-space:nowrap}
   .price-table td:nth-child(2){white-space:nowrap}
+
+  /* Compact bottom bar below map */
+  .map-bottom-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--card);padding:5px 8px;border:1px solid var(--line);border-radius:4px;font-size:11px}
+  .map-loc{color:var(--accent);font-weight:bold;margin-right:4px}
+  .map-tag{padding:1px 6px;border-radius:3px;font-size:10px}
+  .nearby-btn{padding:3px 8px;font-size:11px;border-radius:3px;background:var(--bg3);border:1px solid var(--line2);color:var(--text);cursor:pointer;white-space:nowrap}
+  .nearby-btn:hover{background:#252d33;border-color:var(--accent2);color:var(--accent)}
+  /* Danger/location are driven by flags (classes), never by symbols glued into the label */
+  .nearby-btn.hostile{border-color:#7a3232;color:#ffb0b0}
+  .nearby-btn.hostile:hover{background:#2a1c1c;border-color:#7a3232;color:#ffb0b0}
+  .nearby-btn.here{border-color:var(--accent2);color:var(--accent)}
+  .nearby-btn.here::after{content:" · here";color:var(--muted);font-size:10px}

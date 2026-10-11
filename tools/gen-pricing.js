@@ -59,7 +59,7 @@ const CODE = {
   move: { hunger:0.12, thirst:0.18, thirstDry:0.4, canteen:0.8, coldWarmth:0.6 }, // world-map.js tryMove()
   liveTickMin: 15,                                    // render.js realtimeTick()
   decay: { hunger:4, thirst:5, energyPlayer:3, energyOther:2, warmthNight:6, warmthDay:2, childFactor:0.5, fireNight:4 }, // actions.js decaySurvivor()
-  sleep: { home:14, tentBag:12, bag:9, roof:7, ground:4, rest:7, restCap:60 }, // actions.js sleepConditions()/sleepFor()
+  sleep: { home:14, tentBag:12, bag:11, roof:10, ground:10, rest:5, restCap:60 }, // actions.js sleepConditions()/sleepFor()
   combat: { meleeLo:3, meleeHi:7, brave:2, armor:3, ammoChance:0.3, ammoLo:6, ammoHi:12,
             fleeBase:0.4, fleeQuick:0.2, fleeCoward:0.15, fleePerDanger:0.05, fleeEnergy:10, minutes:15 }, // actions.js combat*()
   lossPct: 0.2, lossList: ["wood","food","water","cloth","metal","weapons"], // actions.js combatLose()
@@ -561,7 +561,7 @@ w(`**Health damage** when a need runs low: hunger <15 → −1 (≤0 → −3); 
 w();
 w(`### 🛌 Sleep recovery (energy / hour)`);
 w();
-w(`Bare ground **${sl.ground}** · lean-to or tent **${sl.roof}** · sleeping bag **${sl.bag}** · tent + bag **${sl.tentBag}** · near housing **${sl.home}**. A short Rest gives +${sl.rest} (up to ${sl.restCap}). Normal phase decay still applies; exposure, radiation and ambushes can interrupt or kill.`);
+w(`Bare ground **${sl.ground}** · lean-to or tent **${sl.roof}** · sleeping bag **${sl.bag}** · tent + bag **${sl.tentBag}** · near housing **${sl.home}**. A short Rest gives +${sl.rest} (up to ${sl.restCap}). Energy decay pauses while you sleep or rest (so 8 h on bare ground nets ~80), but hunger, thirst and warmth keep draining, and exposure, radiation and ambushes can interrupt or kill.`);
 w();
 w(`### 🧳 Starting kit`);
 w();

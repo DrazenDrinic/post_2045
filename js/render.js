@@ -110,7 +110,7 @@ function stockpileContext(g){
       storageBreakdown(g)
       + `<br><b>Access:</b> ${home?"you are beside the campfire/storage, so carried and base supplies are interchangeable.":"walk beside the campfire or a storage building to transfer supplies."}`
       + `<br><b>Pickups:</b> everything you collect goes into your pack first; food stored in base feeds the camp automatically.`,
-    actions: [ { label: "Open Inventory", action: ()=>{ _activeTab="inventory"; render(); } } ] };
+    actions: [ { label: "Open base storage", action: ()=>{ _activeTab="base"; render(); } } ] };
 }
 
 // Explain one Daily Outlook row: net rate plus each contributing source.
@@ -213,7 +213,7 @@ function settlementStatContext(g, key){
         <br>Accumulates passively (<b>${fmt(0.5 + g.survivors.length*0.05)}/day</b>), from studying books, and from research buildings and their workers.
         <br>Spend it in the Knowledge tab to research new buildings, jobs and recipes.`, actions:[{ label:"Open Knowledge tab", action:()=>{ _activeTab="knowledge"; render(); } }] };
     case "storage":
-      return { title:"🗄 Base storage", info: storageBreakdown(g), actions:[{ label:"Open Inventory", action:()=>{ _activeTab="inventory"; render(); } }] };
+      return { title:"🗄 Base storage", info: storageBreakdown(g), actions:[{ label:"Open base storage", action:()=>{ _activeTab="base"; render(); } }] };
   }
   return null;
 }
@@ -360,7 +360,7 @@ function openBuildingDialog(g, id, wx, wy){
   }
   if(id==="campfire" || b.effects?.storage || b.effects?.food_storage){
     lines.push(`<p>Base storage: ${fmt(storageUsage(g).general)} / ${totalStorageCap(g)} shared load. Cellar: ${fmt(storageUsage(g).food)} / ${storageUsage(g).cellar} food load.</p>`);
-    buttons.push({label:"Open inventory / storage",action:()=>{closeModal();_activeTab="inventory";render();}});
+    buttons.push({label:"Open base storage",action:()=>{closeModal();_activeTab="base";render();}});
   }
   if (b.workers){
     const assigned = (g.workerAssign[id] || []);
@@ -445,21 +445,21 @@ function renderLeft(){
   });
   root.appendChild(ch);
   const expedition=el("div","card",`<h3>Expedition</h3><div class="${packWeight(g)>packCapacity(g)*0.9?"warn":"info"}">Carrying: ${fmt(packWeight(g))} / ${packCapacity(g)} load</div><div>Water containers: ${fmt(liquidAmount(g))} / ${liquidCapacity(g)}</div><div>${storageAccess(g)?"Base storage accessible here":"Using carried supplies; unload beside campfire or storage"}</div><div class="muted">${compassLabel(g)}</div><div>${sleepConditions(g).label}</div>`);
-  const inventoryButton=el("button","small","Open inventory"); inventoryButton.onclick=()=>{_activeTab="inventory";render();}; expedition.appendChild(inventoryButton);
+  const inventoryButton=el("button","small","Open pack"); inventoryButton.onclick=()=>{_activeTab="pack";render();}; expedition.appendChild(inventoryButton);
   root.appendChild(expedition);
 
   // Quick actions
   const qa = el("div","card");
   qa.innerHTML = `<h3>Quick Actions</h3>`;
   const groups = [
-    ["Survival",[["eat","Eat","1 food / +30 hunger"],["drink","Drink","1 water / +30 thirst"],["rest","Rest","+7 energy up to 60; exposure applies"],["bandage","Bandage","1 bandage / +15 health"],["warm_fire","Warm up","Nearby fire / +30 warmth"]]],
+    ["Survival",[["eat","Eat","1 food / +30 hunger"],["drink","Drink","1 water / +30 thirst"],["rest","Rest","+5 energy up to 60; exposure applies"],["bandage","Bandage","1 bandage / +15 health"],["warm_fire","Warm up","Nearby fire / +30 warmth"]]],
     ["Gather and explore",[["chop_wood","Chop wood","3-5 wood; axes improve yield"],["gather","Forage","Food, herbs and seeds"],["fetch_water","Fetch water","2 water; containers increase batch"],["gather_fiber","Gather fiber","3-5 fiber"],["gather_stone","Gather stone","2-3 stone"],["mine","Mine","Nearby deposit + pickaxe"],["dig","Dig","3 sand + 2 clay"],["fish","Fish","1-3 meat"],["hunt","Hunt","Bow + 1 arrow"],["survey","Survey","Binoculars reveal terrain"]]],
     ["Camp and craft",[["cook","Cook","Meat or 2 crops + wood / 3 food"],["boil_water","Boil water","2 dirty water + wood / 2 water"],["purify_water","Filter water","2 dirty water + charcoal / 2 water"],["craft_arrows","Craft arrows","Wood + bone / 5 arrows"],["pitch_tent","Pitch tent","Deploy carried tent"],["lay_bag","Lay sleeping bag","Deploy carried sleeping bag"],["lean_to","Build lean-to","4 wood + 4 fiber"],["light_fire","Fuel field fire","1 wood / 4h fuel"],["pack_camp","Pack camp","Recover gear and extinguish fire"],["gather_spirits","Share stories","+5 happiness"],["study","Study","1 book / 2-5 knowledge"],["train","Train","Training yard / +0.5 combat"]]],
   ];
   const search=el("button","small","🔍 Search nearby"); search.onclick=searchNearby; qa.appendChild(search);
   for(const [name,actions] of groups){
-    const group=el("details","quick-group"); group.open=name==="Survival" || _openQuickGroups.has(name);
-    group.ontoggle=()=>{if(group.open) _openQuickGroups.add(name); else _openQuickGroups.delete(name);};
+    const group=el("details","quick-group"); group.open=!_closedQuickGroups.has(name);
+    group.ontoggle=()=>{if(group.open) _closedQuickGroups.delete(name); else _closedQuickGroups.add(name);};
     group.appendChild(el("summary","",name)); const grid=el("div","actgrp");
     for(const [k,label,sub] of actions){
       const icon=QUICK_ACTION_ICONS[k]||"";
@@ -472,30 +472,6 @@ function renderLeft(){
   }
   root.appendChild(qa);
 
-// Settlement summary
-  const ss = el("div","card");
-  const housing = getHousing(g);
-  const danger = settlementDanger(g);
-  const safety = settlementSafety(g);
-  let workersTotal = 0; let workersFree = 0;
-  for (const s of adults(g)){ if (s.health>0){ workersTotal++; if (!g.jobs[s.id] || g.jobs[s.id]==="none") workersFree++; } }
-  const statLine = (key, html) => {
-    const d = el("div","",html);
-    d.title = "Right-click for details";
-    d.style.cursor = "help";
-    d.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, settlementStatContext(g, key)); };
-    return d;
-  };
-  ss.innerHTML = `<h3>🏕 Settlement</h3>`;
-  ss.appendChild(statLine("population", `Population: <b>${g.survivors.length}</b> (${children(g).length} children)`));
-  ss.appendChild(statLine("housing", `Housing: <b>${housing}</b> ${g.survivors.length>housing?'<span class="bad">(overcrowded)</span>':""}`));
-  ss.appendChild(statLine("workers", `Workers: <b>${workersTotal-workersFree}/${workersTotal-1}</b> assigned${workersFree>1?` <span class="warn">(${workersFree-1} idle)</span>`:""}`));
-  ss.appendChild(statLine("danger", `Danger: <span class="${danger>30?'bad':danger>15?'warn':'good'}">${danger}</span> · Safety: <b>${safety}</b>`));
-  ss.appendChild(statLine("reputation", `Reputation: <b>${Math.round(g.reputation*10)/10}</b>`));
-  ss.appendChild(statLine("knowledge", `Knowledge: <b>${Math.floor(g.knowledge*10)/10}</b>`));
-  ss.appendChild(statLine("storage", `Base storage: <b>${fmt(storageUsage(g).general)} / ${totalStorageCap(g)}</b> shared load`));
-  ss.appendChild(statLine("storage", `Food cellar: ${fmt(storageUsage(g).food)} / ${storageUsage(g).cellar} load`));
-  root.appendChild(ss);
 }
 
 function renderRight(){
@@ -641,7 +617,8 @@ function estimateDailyDelta(g){
 const TABS = [
   {id:"map", label:"🗺 World Map"},
   {id:"town", label:"🏘 Town"},
-  {id:"inventory",label:"Inventory"},
+  {id:"pack", label:"🎒 Pack"},
+  {id:"base", label:"🏕 Base"},
   {id:"crafting",label:"Crafting"},
   {id:"farms",label:"Farming"},
   {id:"build", label:"🏗 Build"},
@@ -656,7 +633,7 @@ let _activeTab = "map";
 let _buildToPlace = null;
 let _rtSpeed = 0;
 let _rtTimer = null;
-const _openQuickGroups = new Set();
+const _closedQuickGroups = new Set();
 let _craftFilter = "all";
 const _tabSearch = {};
 function tabSearchTokens(tabKey){
@@ -723,7 +700,8 @@ function renderContent(){
   root.innerHTML = "";
   switch(_activeTab){
     case "map": return renderMapTab(root);
-    case "inventory": return renderInventoryTab(root);
+    case "pack": return renderPackTab(root);
+    case "base": return renderBaseTab(root);
     case "crafting": return renderCraftingTab(root);
     case "farms": return renderFarmsTab(root);
     case "town": return renderTownTab(root);
@@ -741,16 +719,39 @@ function renderMapTab(root){
   const g = G;
   const wrap = el("div","map-wrap");
 
-  // Controls
+  // Controls / settlement status bar
   const ctrls = el("div","map-controls");
   const p = g.survivors[0];
-  ctrls.innerHTML = _buildToPlace ? `<span><b>Build mode:</b> click clear ground near the campfire to place <b>${BUILDINGS[_buildToPlace].icon} ${BUILDINGS[_buildToPlace].name}</b></span>
-    <span class="legend">Buildings and walls are placed on the map around your settlement.</span>` : `<span><b>Move:</b> WASD / Arrows · <b>Click</b> a tile to walk · Walk into entities to interact</span>
-    <span class="legend">· Energy: ${Math.round(p.energy)}/100 · Vision: ${visionRadius(g)} tiles · ${compassLabel(g)}</span>`;
   if (_buildToPlace){
+    ctrls.innerHTML = `<span><b>Build mode:</b> click clear ground near the campfire to place <b>${BUILDINGS[_buildToPlace].icon} ${BUILDINGS[_buildToPlace].name}</b></span>
+      <span class="legend">Buildings and walls are placed on the map around your settlement.</span>`;
     const cancel = el("button", "small", "Cancel build");
     cancel.onclick = ()=>{ _buildToPlace = null; render(); };
     ctrls.appendChild(cancel);
+  } else {
+    const danger = settlementDanger(g);
+    const safety = settlementSafety(g);
+    let wTotal=0,wAssigned=0;
+    for(const s of adults(g)) if(s.health>0){ wTotal++; if(g.jobs[s.id] && g.jobs[s.id]!=="none") wAssigned++; }
+    const food=g.resources.food||0, water=g.resources.water||0;
+    const pop=g.survivors.length, kids=children(g).length;
+    const foodDays=pop>0?Math.floor(food/pop):"—", waterDays=pop>0?Math.floor(water/pop):"—";
+    const su=storageUsage(g), cap=totalStorageCap(g);
+    const housing=getHousing(g);
+    const dangerCls=danger>30?"bad":danger>15?"warn":"good";
+    const stats = [
+      {text:`👥 ${pop}`, ctx:{title:"Population", info:`<b>${pop}</b> survivors (${kids} children)<br>Housing: ${housing} capacity${pop>housing?" <span class='bad'>(overcrowded!)</span>":""}` }},
+      {text:`🔨 ${wAssigned}/${wTotal>0?wTotal-1:0}`, ctx:{title:"Workers", info:`<b>${wAssigned}</b> assigned out of <b>${wTotal-1}</b> available.<br>${wTotal-1-wAssigned>0?`<span class="warn">${wTotal-1-wAssigned} idle — assign them in the Jobs tab.</span>`:"All workers assigned."}` }},
+      {text:`⚠ ${danger}`, cls:dangerCls, ctx:{title:"Danger & Safety", info:`Danger: <span class="${dangerCls}"><b>${danger}</b></span> · Safety: <b>${safety}</b><br>Danger rises with population and low defenses. Build walls, guard posts and assign guards to improve safety.` }},
+      {text:`📦 ${fmt(su.general)}/${cap}`, ctx:{title:"Storage", info:`General: <b>${fmt(su.general)} / ${cap}</b> load<br>Food cellar: <b>${fmt(su.food)} / ${su.cellar}</b> load<br>Build storage buildings to increase capacity.` }},
+      {text:`🍞 ${foodDays}d`, ctx:{title:"Food Supply", info:`<b>${fmt(food)}</b> food on hand.<br>At ${pop} people that's roughly <b>${foodDays} day${foodDays===1?"":"s"}</b>.<br>Forage, hunt, farm or assign a cook to produce more.` }},
+      {text:`💧 ${waterDays}d`, ctx:{title:"Water Supply", info:`<b>${fmt(water)}</b> clean water on hand.<br>At ${pop} people that's roughly <b>${waterDays} day${waterDays===1?"":"s"}</b>.<br>Fetch water from springs, streams or build a well.` }},
+    ];
+    for (const s of stats){
+      const span = el("span",`map-stat${s.cls?" "+s.cls:""}`,s.text);
+      span.oncontextmenu = (ev)=>{ ev.preventDefault(); showContextMenu(ev, s.ctx); };
+      ctrls.appendChild(span);
+    }
   }
   wrap.appendChild(ctrls);
   const mapTools=el("div","row");
@@ -868,7 +869,8 @@ function renderMapTab(root){
         }
         if (x===g.playerX && y===g.playerY){openTileActionDialog(g,x,y);return;}
         if (!isExplored) return;
-        startAutoWalk(x,y);
+        const _t=tileAt(g,x,y), _hasInteract=(_t.feature && !MAP_FEATURES[_t.feature.type]?.hidden) || (_t.entity && MAP_ENTITIES[_t.entity.type]);
+        startAutoWalk(x,y, _hasInteract ? ()=>openTileActionDialog(g,x,y) : undefined);
       };
       cell.oncontextmenu = (ev)=>{
         ev.preventDefault();
@@ -886,38 +888,53 @@ function renderMapTab(root){
   mapStage.appendChild(phaseBadge);
   wrap.appendChild(mapStage);
 
-  // Bottom info: current tile / nearby
-  const info = el("div","card");
+  // Bottom bar: location + nearby buttons (compact)
+  const info = el("div","map-bottom-bar");
   const here = tileAt(g, g.playerX, g.playerY);
   const bb = BIOMES[here.biome];
-  let info_html = `<h3>📍 ${bb.name} (${g.playerX},${g.playerY})</h3>`;
-  if (isAdjacentToVillage(g)) info_html += `<div class="good">You are at your settlement. Followers will join here.</div>`;
-  if (_buildToPlace) info_html += `<div class="warn">Build mode active: place ${BUILDINGS[_buildToPlace].name} inside the highlighted settlement area.</div>`;
-  info_html += `<div class="muted">Nearby:</div>`;
-  const nearby = [];
+  const locSpan = el("span","map-loc",`📍 ${bb.name} (${g.playerX},${g.playerY})`);
+  info.appendChild(locSpan);
+  if (isAdjacentToVillage(g)){ const tag=el("span","good map-tag","🏕 Home"); info.appendChild(tag); }
+  const nearbyItems = [];
   for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++){
     const x=g.playerX+dx, y=g.playerY+dy;
     if (!inBounds(x,y)) continue;
-    if (dx===0 && dy===0) continue;
+    if (dx===0 && dy===0){
+      const t = tileAt(g, x, y);
+      if (t.feature && !MAP_FEATURES[t.feature.type].hidden){
+        const f = MAP_FEATURES[t.feature.type];
+        nearbyItems.push({label:`${f.icon} ${f.name}`, x, y, here:true});
+      }
+      if (t.entity){
+        const e = MAP_ENTITIES[t.entity.type];
+        if (e && (!e.nightOnly || isNight(g))) nearbyItems.push({label:`${e.icon} ${e.name}`, x, y, here:true, hostile:!!e.hostile});
+      }
+      continue;
+    }
     if (!g.explored[x+","+y]) continue;
     const t = tileAt(g, x, y);
     if (t.feature && !MAP_FEATURES[t.feature.type].hidden){
       const f = MAP_FEATURES[t.feature.type];
-      nearby.push(`${f.icon} ${f.name}`);
+      nearbyItems.push({label:`${f.icon} ${f.name}`, x, y});
     }
     if (t.entity){
       const e = MAP_ENTITIES[t.entity.type];
-      if (e && (!e.nightOnly || isNight(g))) nearby.push(`${e.icon} ${e.name}${e.hostile?" ⚠":""}`);
+      if (e && (!e.nightOnly || isNight(g))) nearbyItems.push({label:`${e.icon} ${e.name}`, x, y, hostile:!!e.hostile});
     }
   }
-  info_html += nearby.length ? `<div>${nearby.join(" · ")}</div>` : `<div class="dim">Nothing of note.</div>`;
-  info.innerHTML = info_html;
+  for (const item of nearbyItems){
+    const cls = "nearby-btn" + (item.hostile?" hostile":"") + (item.here?" here":"");
+    const btn = el("button",cls,item.label);
+    if (item.hostile) btn.title = "Hostile — approaching starts combat.";
+    if (item.here) btn.title = "You are standing here.";
+    btn.onclick = ()=>{
+      const d=tileDistance(g,item.x,item.y);
+      if(d<=1) openTileActionDialog(g,item.x,item.y);
+      else startAutoWalk(item.x,item.y,()=>openTileActionDialog(g,item.x,item.y));
+    };
+    info.appendChild(btn);
+  }
   wrap.appendChild(info);
-
-  // Biome legend
-  const legend = el("details","biome-key");
-  legend.innerHTML = `<summary>Biomes</summary><div>${Object.values(BIOMES).map(b=>`<span><i style="background:${b.bg}"></i>${b.name}</span>`).join("")}</div>`;
-  wrap.appendChild(legend);
 
   root.appendChild(wrap);
 }
@@ -1468,7 +1485,7 @@ function guidePriceSection(){
     ["🎺 Gather Spirits","gather_spirits","+happiness for the nearby group"],
     ["🏹 Craft Arrows","craft_arrows","1 wood + 1 bones → 5 arrows"],
     ["🦌 Hunt","hunt","carry bow + spend 1 arrow → meat, hides, bones"],
-    ["💤 Rest","rest","+7 energy (short rest)"],
+    ["💤 Rest","rest","+5 energy (short rest)"],
     ["🥋 Train","train","+0.5 combat skill"],
     ["📖 Study","study","1 book → +2–5 knowledge"],
     ["⛏ Mine","mine","needs pickaxe → ore / stone"],
@@ -1770,7 +1787,7 @@ function renderGuideTab(root){
       <ul>
         <li><b>🍞 Eat</b> — instant, uses 1 food, +30 hunger.</li>
         <li><b>💧 Drink</b> — instant, uses water or risky dirty water.</li>
-        <li><b>Rest</b> — 30 minutes, +7 energy up to 60 before phase decay; exposure and encounters still apply. Sleep is needed for full recovery.</li>
+        <li><b>Rest</b> — 30 minutes, +5 energy up to 60 before phase decay; exposure and encounters still apply. Sleep is needed for full recovery.</li>
         <li><b>Chop Wood</b> — 30 minutes, 3–5 wood; axes improve speed and yield.</li>
         <li><b>Forage</b> — food, herbs and seeds in 20 minutes.</li>
         <li><b>Fetch Water</b> — stand next to water; 10 minutes for 2 water, 3 with a canteen, 5 with a bucket.</li>
@@ -1783,8 +1800,8 @@ function renderGuideTab(root){
         <li><b>Hunt</b> — carry a bow and spend an arrow to shoot a visible animal 1–3 tiles away.</li>
       </ul>
       <p>Expand the action groups for mining, fishing, camp setup and repairs. <b>Train</b> and <b>Study</b> take one hour each.</p>
-      <h4>Inventory, crafting and camping</h4>
-      <p>Your carrying capacity starts at 30 load; equip backpacks for 45 or 65. Every personal pickup enters your pack. Return beside the home campfire or a storage building to unload. Base storage starts at 80 shared load; sheds add 100, warehouses 400, and food cellars 200 food-only load. Your starting water container holds 3; carried canteens add 3 and buckets add 5. Water also weighs 0.6 load per unit. Finite loot you cannot carry remains at its source.</p>
+      <h4>Pack, base storage, crafting and camping</h4>
+      <p>Your carrying capacity starts at 30 load; equip backpacks for 45 or 65. Every personal pickup enters your 🎒 Pack. Return beside the home campfire or a storage building and use the 🏕 Base tab to move items between pack and storage side by side. Base storage starts at 80 shared load; sheds add 100, warehouses 400, and food cellars 200 food-only load. Your starting water container holds 3; carried canteens add 3 and buckets add 5. Water also weighs 0.6 load per unit. Finite loot you cannot carry remains at its source.</p>
       <p>Build a <b>Crafting Table</b> for bows, tents and equipment. Stone tools and sleeping bags can be crafted by hand. The Crafting tab lists exact recipes and station requirements. Tools wear down and can be repaired with repair kits. Torches and lanterns need fuel. A carried compass points home.</p>
       <p>Deploy your sleeping bag and portable tent before sleeping. One wood gives a field fire four hours of fuel. Rain, cold, nearby hostiles and radiation matter: check the sleep preview. A lean-to costs 4 wood and 4 fiber. Pack your camp before moving on.</p>
       <h4>Farming and production</h4>
@@ -2010,7 +2027,7 @@ function detectHint(g){
   }
   if (p.health < 30) return "I'm hurt badly. Get back to camp, rest, and find medicine. Hot springs (♨) on the map also heal.";
   if (p.diseased){
-    if (playerAmount(g,"medicine") >= 1) return "I'm sick — use <b>Treat</b> beside Medicine in Inventory to recover.";
+    if (playerAmount(g,"medicine") >= 1) return "I'm sick — use <b>Treat</b> beside Medicine in your Pack to recover.";
     return "I'm <b>diseased</b>. I need medicine — search hospitals, medicine cabinets, or research <b>Herbalism</b> to brew it from herbs.";
   }
   if (p.warmth < 25){
@@ -2112,66 +2129,28 @@ function cycleRealtimeSpeed(){
 function appendButton(root,label,action,disabled=false,title=""){
   const b=el("button","small",label); b.onclick=action; b.disabled=!!disabled; b.title=title; root.appendChild(b); return b;
 }
-function renderInventoryTab(root){
-  const g=G,home=storageAccess(g),here=g.caches[positionKey(g)],used=storageUsage(g);
-  const card=el("div","card",`<h3>Inventory · ${fmt(packWeight(g))} / ${packCapacity(g)} load</h3><p>Water containers: ${fmt(liquidAmount(g))} / ${liquidCapacity(g)} units<br>Base: ${fmt(used.general)} / ${totalStorageCap(g)} shared load${used.cellar?` · Food cellar: ${fmt(used.food)} / ${used.cellar}`:""}</p><p class="muted">${home?"Unload supplies into base storage, or take what fits.":"Walk beside the home campfire or a storage building to transfer. Only carried supplies are available here."} Every personal pickup enters your pack. Tools are selected automatically; equip weapons, clothing and backpacks.</p>${packWeight(g)>packCapacity(g)+1e-8 || liquidAmount(g)>liquidCapacity(g)+1e-8?'<p class="warn">Existing carried supplies exceed capacity. Unload or use them before collecting more.</p>':""}`);
-  const controls=el("div","row");
-  for(const preset of ["Day Trip","Overnight","Mining"]) appendButton(controls,"Pack "+preset,()=>packPreset(preset),!home);
-  appendButton(controls,"Unload materials",()=>depositMaterials(false),!home);
-  appendButton(controls,"Unload all supplies",()=>depositMaterials(true),!home);
-  card.appendChild(controls);
-  card.appendChild(el("p","muted","Packing presets fill consumables only. Take camping gear and tools separately. Take/drop buttons split stacks; Full transfers as much as fits."));
-  renderTabSearchInput(card, "inventory", "Search items: wood, axe, bandage…");
-  for(const key of RES_KEYS){
-    const carried=g.inventory.resources[key] || 0,stored=g.resources[key] || 0;
-    if(!carried && !(home && stored)) continue;
-    if(!matchesTabSearch("inventory", RESOURCES[key].name, key)) continue;
-    const row=el("div","inventory-row",`<div><b>${RESOURCES[key].name}</b><div class="muted">Pack ${fmt(carried)}${home?` · Town ${fmt(stored)}`:""} · ${resourceWeight(key)} load/unit</div></div>`);
+// Shared gear renderer used by both the Pack and Base tabs.
+// source: "pack" (equip/repair/deploy + store-or-drop) | "town" | "cache" (take).
+function showGearInto(container, g, list, source, label, home, tabKey){
+  const filtered=list.filter(item=>{const def=ITEMS[item.type];return matchesTabSearch(tabKey,def.name,item.type,def.kind||"",def.desc||"");});
+  container.appendChild(el("h4","",label));
+  if(!filtered.length){ container.appendChild(el("div","muted","None.")); return; }
+  for(const item of filtered){
+    const def=ITEMS[item.type],equipped=Object.values(g.equipment).includes(item.id);
+    const row=el("div","inventory-row",`<div><b>${def.name}</b> ${equipped?'<span class="good">Equipped</span>':""}<div class="muted">${def.weight} load${item.durability!=null?` · ${Math.ceil(item.durability)}/${def.durability} ${def.kind==="light"?"fuel minutes":"durability"}`:""}${def.capacity?` · ${def.capacity} capacity`:""}${def.tier?` · tier ${def.tier}`:""}</div></div>`);
     const buttons=el("div","row");
-    if(home){
-      appendButton(buttons,"Take 1",()=>transferResource(key,1,"take"),stored<1 || carryRoom(g,key)<1);
-      appendButton(buttons,"Take 5",()=>transferResource(key,5,"take"),stored<=0 || carryRoom(g,key)<0.001);
-      appendButton(buttons,"Take what fits",()=>transferResource(key,stored,"take"),stored<=0 || carryRoom(g,key)<0.001);
-      appendButton(buttons,"Store 1",()=>transferResource(key,1,"deposit"),carried<1 || storageRoom(g,key)<1);
-      appendButton(buttons,"Store what fits",()=>transferResource(key,carried,"deposit"),carried<=0 || storageRoom(g,key)<0.001);
-    }
-    appendButton(buttons,"Drop 1",()=>transferResource(key,1,"drop"),carried<=0);
-    const use={food:"eat",water:"drink",dirty_water:"drink",bandages:"bandage"}[key];
-    if(use) appendButton(buttons,"Use",()=>playerAction(use),!!quickActionBlocker(g,use));
-    if(key==="medicine") appendButton(buttons,"Treat",useMedicine,playerAmount(g,"medicine")<1);
-    row.appendChild(buttons); card.appendChild(row);
+    if(source==="pack"){
+      if(def.slot) appendButton(buttons,equipped?"Unequip":"Equip",()=>equipGear(item.id));
+      if(item.durability!=null) appendButton(buttons,def.kind==="light"?"Refuel":"Repair",()=>repairGear(item.id),item.durability>=def.durability,def.kind==="light"?"1 wood (torch) or oil (lantern)":"1 repair kit");
+      if(def.kind==="bedroll" || def.kind==="tent") appendButton(buttons,"Deploy",()=>campAction(def.kind==="tent"?"pitch_tent":"lay_bag"));
+      appendButton(buttons,home?"Store":"Drop",()=>moveGear(item.id,"pack"),equipped);
+    } else appendButton(buttons,"Take",()=>moveGear(item.id,source));
+    row.appendChild(buttons);container.appendChild(row);
   }
-  root.appendChild(card);
-  const gearCard=el("div","card","<h3>Equipment</h3>");
-  const showGear=(list,source,label)=>{
-    const filtered=list.filter(item=>{const def=ITEMS[item.type];return matchesTabSearch("inventory",def.name,item.type,def.kind||"",def.desc||"");});
-    gearCard.appendChild(el("h4","",label));
-    if(!filtered.length) gearCard.appendChild(el("div","muted","None."));
-    for(const item of filtered){
-      const def=ITEMS[item.type],equipped=Object.values(g.equipment).includes(item.id);
-      const row=el("div","inventory-row",`<div><b>${def.name}</b> ${equipped?'<span class="good">Equipped</span>':""}<div class="muted">${def.weight} load${item.durability!=null?` · ${Math.ceil(item.durability)}/${def.durability} ${def.kind==="light"?"fuel minutes":"durability"}`:""}${def.capacity?` · ${def.capacity} capacity`:""}${def.tier?` · tier ${def.tier}`:""}</div></div>`);
-      const buttons=el("div","row");
-      if(source==="pack"){
-        if(def.slot) appendButton(buttons,equipped?"Unequip":"Equip",()=>equipGear(item.id));
-        if(item.durability!=null) appendButton(buttons,def.kind==="light"?"Refuel":"Repair",()=>repairGear(item.id),item.durability>=def.durability,def.kind==="light"?"1 wood (torch) or oil (lantern)":"1 repair kit");
-        if(def.kind==="bedroll" || def.kind==="tent") appendButton(buttons,"Deploy",()=>campAction(def.kind==="tent"?"pitch_tent":"lay_bag"));
-        appendButton(buttons,home?"Store":"Drop",()=>moveGear(item.id,"pack"),equipped);
-      } else appendButton(buttons,"Take",()=>moveGear(item.id,source));
-      row.appendChild(buttons);gearCard.appendChild(row);
-    }
-  };
-  showGear(g.inventory.gear,"pack","Carried gear");
-  if(home) showGear(g.townGear,"town","Settlement equipment");
-  if(here) showGear(here.gear,"cache","Ground equipment here");
-  root.appendChild(gearCard);
-  if(here){
-    const cache=el("div","card","<h3>Ground cache here</h3>");
-    for(const [key,n] of Object.entries(here.resources)) if(n>0){
-      const row=el("div","inventory-row",`<span>${RESOURCES[key].name}: ${fmt(n)}</span>`);
-      appendButton(row,"Take what fits",()=>takeCacheResource(key,n)); cache.appendChild(row);
-    }
-    root.appendChild(cache);
-  }
+}
+
+// "Known camps, caches and sites" — base logistics, shown on the Base tab.
+function renderPlacesCard(root, g){
   const places=el("div","card","<h3>Known camps, caches and sites</h3>");
   const keys=new Set([...Object.keys(g.markers),...Object.keys(g.camps),...Object.keys(g.workSites),...Object.keys(g.caches)]);
   if(!keys.size) places.appendChild(el("p","muted","Mark locations from the World Map. Build an outpost on a cache to let haulers retrieve materials."));
@@ -2183,6 +2162,126 @@ function renderInventoryTab(root){
     appendButton(row,"Walk there",()=>{_activeTab="map";render();startAutoWalk(...key.split(",").map(Number));},key===positionKey(g));places.appendChild(row);
   }
   root.appendChild(places);
+}
+
+// 🎒 Personal pack — always available, wherever you are.
+function renderPackTab(root){
+  const g=G,home=storageAccess(g),here=g.caches[positionKey(g)];
+  const over=packWeight(g)>packCapacity(g)+1e-8 || liquidAmount(g)>liquidCapacity(g)+1e-8;
+  const card=el("div","card",`<h3>🎒 Pack · ${fmt(packWeight(g))} / ${packCapacity(g)} load</h3><p>Water containers: ${fmt(liquidAmount(g))} / ${liquidCapacity(g)} units</p><p class="muted">Everything you carry. Personal pickups enter your pack; tools are selected automatically. ${home?"You're at the base — open the 🏕 Base tab for side-by-side transfer.":"Walk beside the home campfire or a storage building to transfer with base storage."}</p>${over?'<p class="warn">Carried supplies exceed capacity. Use, drop or store some before collecting more.</p>':""}`);
+  if(home){
+    const controls=el("div","row");
+    appendButton(controls,"Store all materials",()=>depositMaterials(false));
+    appendButton(controls,"Store everything",()=>depositMaterials(true));
+    card.appendChild(controls);
+  }
+  renderTabSearchInput(card, "pack", "Search items: wood, axe, bandage…");
+  let any=false;
+  for(const key of RES_KEYS){
+    const carried=g.inventory.resources[key] || 0;
+    if(carried<=0) continue;
+    if(!matchesTabSearch("pack", RESOURCES[key].name, key)) continue;
+    any=true;
+    const stored=g.resources[key] || 0;
+    const row=el("div","inventory-row",`<div><b>${RESOURCES[key].name}</b><div class="muted">Pack ${fmt(carried)}${home?` · Base ${fmt(stored)}`:""} · ${resourceWeight(key)} load/unit</div></div>`);
+    const buttons=el("div","row");
+    const use={food:"eat",water:"drink",dirty_water:"drink",bandages:"bandage"}[key];
+    if(use) appendButton(buttons,"Use",()=>playerAction(use),!!quickActionBlocker(g,use));
+    if(key==="medicine") appendButton(buttons,"Treat",useMedicine,playerAmount(g,"medicine")<1);
+    if(home){
+      appendButton(buttons,"Store 1",()=>transferResource(key,1,"deposit"),storageRoom(g,key)<1);
+      appendButton(buttons,"Store all",()=>transferResource(key,carried,"deposit"),storageRoom(g,key)<0.001);
+    }
+    appendButton(buttons,"Drop 1",()=>transferResource(key,1,"drop"));
+    row.appendChild(buttons); card.appendChild(row);
+  }
+  if(!any) card.appendChild(el("p","muted","Your pack is empty."));
+  root.appendChild(card);
+
+  const gearCard=el("div","card","<h3>Equipment</h3>");
+  showGearInto(gearCard,g,g.inventory.gear,"pack","Carried gear",home,"pack");
+  if(here) showGearInto(gearCard,g,here.gear,"cache","Ground equipment here",home,"pack");
+  root.appendChild(gearCard);
+
+  if(here){
+    const cache=el("div","card","<h3>Ground cache here</h3>");
+    let anyC=false;
+    for(const [key,n] of Object.entries(here.resources)) if(n>0){
+      anyC=true;
+      const row=el("div","inventory-row",`<span>${RESOURCES[key].name}: ${fmt(n)}</span>`);
+      appendButton(row,"Take what fits",()=>takeCacheResource(key,n),carryRoom(g,key)<0.001); cache.appendChild(row);
+    }
+    if(anyC) root.appendChild(cache);
+  }
+}
+
+// 🏕 Base storage — side-by-side transfer when you're at the base, read-only snapshot otherwise.
+function renderBaseTab(root){
+  const g=G,home=storageAccess(g),used=storageUsage(g),cap=totalStorageCap(g);
+  const header=el("div","card",`<h3>🏕 Base storage · ${fmt(used.general)} / ${cap} shared load${used.cellar?` · Food cellar ${fmt(used.food)} / ${used.cellar}`:""}</h3><p class="muted">Your settlement's shared stockpile. Pack: ${fmt(packWeight(g))} / ${packCapacity(g)} load.</p>${home?"":'<p class="warn">Not at the base — walk beside the home campfire or a storage building to transfer.</p>'}`);
+  if(home){
+    const controls=el("div","row");
+    for(const preset of ["Day Trip","Overnight","Mining"]) appendButton(controls,"Pack "+preset,()=>packPreset(preset));
+    appendButton(controls,"Store all materials",()=>depositMaterials(false));
+    appendButton(controls,"Store everything",()=>depositMaterials(true));
+    header.appendChild(controls);
+  }
+  renderTabSearchInput(header, "base", "Search items: wood, axe, bandage…");
+  root.appendChild(header);
+
+  if(home){
+    const gridCard=el("div","card");
+    gridCard.appendChild(el("p","muted","Move resources between your pack (left) and base storage (right). Buttons grey out when a side is empty or full."));
+    const grid=el("div","transfer-grid");
+    grid.appendChild(el("div","transfer-head pack",`🎒 Pack ${fmt(packWeight(g))}/${packCapacity(g)}`));
+    grid.appendChild(el("div","transfer-head base",`🏕 Base ${fmt(used.general)}/${cap}`));
+    let any=false;
+    for(const key of RES_KEYS){
+      const carried=g.inventory.resources[key] || 0, stored=g.resources[key] || 0;
+      if(carried<=0 && stored<=0) continue;
+      if(!matchesTabSearch("base", RESOURCES[key].name, key)) continue;
+      any=true;
+      const packCell=el("div","transfer-cell pack",`<div><b>${RESOURCES[key].name}</b> · ${fmt(carried)}</div>`);
+      const pb=el("div","row");
+      appendButton(pb,"Store 1 ▸",()=>transferResource(key,1,"deposit"),carried<1 || storageRoom(g,key)<1);
+      appendButton(pb,"Store all ▸",()=>transferResource(key,carried,"deposit"),carried<=0 || storageRoom(g,key)<0.001);
+      packCell.appendChild(pb);
+      const baseCell=el("div","transfer-cell base",`<div><b>${RESOURCES[key].name}</b> · ${fmt(stored)}</div>`);
+      const bb=el("div","row");
+      appendButton(bb,"◂ Take 1",()=>transferResource(key,1,"take"),stored<1 || carryRoom(g,key)<1);
+      appendButton(bb,"◂ Take 5",()=>transferResource(key,5,"take"),stored<=0 || carryRoom(g,key)<0.001);
+      appendButton(bb,"◂ Take fits",()=>transferResource(key,stored,"take"),stored<=0 || carryRoom(g,key)<0.001);
+      baseCell.appendChild(bb);
+      grid.appendChild(packCell); grid.appendChild(baseCell);
+    }
+    if(!any) gridCard.appendChild(el("p","muted","Nothing to transfer right now.")); else gridCard.appendChild(grid);
+    root.appendChild(gridCard);
+
+    const gearCard=el("div","card","<h3>Equipment transfer</h3>");
+    showGearInto(gearCard,g,g.inventory.gear,"pack","Carried gear (store to base)",home,"base");
+    showGearInto(gearCard,g,g.townGear,"town","Settlement equipment (take to pack)",home,"base");
+    root.appendChild(gearCard);
+  } else {
+    const snap=el("div","card","<h3>Stored resources</h3>");
+    let any=false;
+    for(const key of RES_KEYS){
+      const stored=g.resources[key] || 0;
+      if(stored<=0) continue;
+      if(!matchesTabSearch("base", RESOURCES[key].name, key)) continue;
+      any=true;
+      snap.appendChild(el("div","inventory-row",`<span><b>${RESOURCES[key].name}</b> — ${fmt(stored)}</span>`));
+    }
+    if(!any) snap.appendChild(el("p","muted","Base storage is empty, or nothing matches your search."));
+    if(g.townGear.length){
+      snap.appendChild(el("h4","","Settlement equipment"));
+      const counts={};
+      for(const it of g.townGear){ const nm=ITEMS[it.type].name; counts[nm]=(counts[nm]||0)+1; }
+      for(const [nm,c] of Object.entries(counts)) snap.appendChild(el("div","inventory-row",`<span>${nm}${c>1?` ×${c}`:""}</span>`));
+    }
+    root.appendChild(snap);
+  }
+
+  renderPlacesCard(root, g);
 }
 function renderCraftingTab(root){
   const g=G,card=el("div","card",'<h3>Crafting</h3><p class="muted">Basic recipes work by hand. Stations are accessible inside your settlement. All personal crafting outputs enter your pack; free enough space before starting. Stored ingredients are accessible beside the campfire or storage. Worker orders use base supplies. Bulk crafting stops for interruptions.</p>');

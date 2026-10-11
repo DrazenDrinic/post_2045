@@ -51,7 +51,7 @@ function newGame(){
   // Initial log
   pushLog(g, "Day 1. You wake by a campfire among the cinders. The wind smells of rust.","info");
   pushLog(g, "Walk out into the world — find food, water and other survivors.","info");
-  pushLog(g, "Pack supplies in Inventory. Craft a sleeping bag and tools, then explore. Search nearby features using Quick Actions or right-click.","info");
+  pushLog(g, "Pack supplies from the 🏕 Base tab. Craft a sleeping bag and tools, then explore. Search nearby features using Quick Actions or right-click.","info");
   return g;
 }
 

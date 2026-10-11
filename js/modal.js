@@ -14,6 +14,7 @@ function showModal({title, body, buttons}){
     if (b.disabled) btn.disabled = true;
     if (b.title) btn.title = b.title;
     btn.onclick = b.action;
+    if (b.hint) btn.oncontextmenu = ev=>{ ev.preventDefault(); showContextMenu(ev,{title:b.label,info:b.hint}); };
     acts.appendChild(btn);
   }
   m.appendChild(acts);
@@ -41,6 +42,10 @@ function closeContextMenu(){
 
 // opts: {title, info (HTML string), actions:[{label, sub?, disabled?, title?, action}]}
 function showContextMenu(ev, opts){
+  // The innermost element wins: stop the right-click from bubbling to an
+  // ancestor whose own handler would call closeContextMenu() and clobber us
+  // (e.g. a resource row inside the "Stored at base" card).
+  if (ev && ev.stopPropagation) ev.stopPropagation();
   closeContextMenu();
   if (!opts) return;
   const menu = el("div","ctx-menu");

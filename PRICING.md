@@ -61,8 +61,8 @@
 | 🎣 Fish | **30 min** | 2 | needs a rod beside water |
 | 🩹 Bandage | **5 min** | — | 1 bandage → +15 HP, clears injury |
 | 💊 Treat illness | **5 min** | — | 1 medicine → +25 HP, clears disease · 5 min |
-| 💤 Rest | **30 min** | — | +7 energy up to 60 before phase decay |
-| 🛏️ Sleep | **2 / 4 / 8 h** | — | recovery 4–14 energy/hr by shelter; can be interrupted |
+| 💤 Rest | **30 min** | — | +5 energy up to 60 before phase decay |
+| 🛏️ Sleep | **2 / 4 / 8 h** | — | recovery 10–14 energy/hr by shelter; can be interrupted |
 | 🍞 Eat / 💧 Drink | **free** | — | eat: 1 food → +30 hunger; drink: 1 clean (+30) or dirty (+20, 15% illness) |
 
 <sub>⚙ an axe/pickaxe/shovel cuts time by `max(0.45, 1 − tier×0.15)` → 15 / 30 / 45 % at tier 1 / 2 / 3. Planks take ×0.6 time with a saw (15 → 9 min).</sub>
@@ -729,7 +729,7 @@ Flee on contact — shoot with a bow from 1–3 tiles.
 
 ### 🛌 Sleep recovery (energy / hour)
 
-Bare ground **4** · lean-to or tent **7** · sleeping bag **9** · tent + bag **12** · near housing **14**. A short Rest gives +7 (up to 60). Normal phase decay still applies; exposure, radiation and ambushes can interrupt or kill.
+Bare ground **10** · lean-to or tent **10** · sleeping bag **11** · tent + bag **12** · near housing **14**. A short Rest gives +5 (up to 60). Energy decay pauses while you sleep or rest (so 8 h on bare ground nets ~80), but hunger, thirst and warmth keep draining, and exposure, radiation and ambushes can interrupt or kill.
 
 ### 🧳 Starting kit
 

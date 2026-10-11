@@ -3,6 +3,9 @@
 // ------------------------- ACTIONS ------------------------------
 
 let _activityEpoch = 0;
+// Transient flag: true only while the (synchronous) sleep/rest loop runs. Kept out
+// of G so it is never serialized by save() — a stuck "true" would disable energy decay.
+let _sleeping = false;
 
 function passPhase(g, phases=1, reason=""){
   passMinutes(g, phases * 360);
@@ -70,7 +73,7 @@ function decaySurvivor(g, s, isPlayer, night){
   const factor = s.isChild ? 0.5 : 1;
   s.hunger = clamp(s.hunger - 4*factor, 0, 100);
   s.thirst = clamp(s.thirst - 5*factor, 0, 100);
-  s.energy = clamp(s.energy - (isPlayer? 3 : 2), 0, 100);
+  if (!_sleeping) s.energy = clamp(s.energy - (isPlayer? 3 : 2), 0, 100);
   s.warmth = clamp(s.warmth - (night? 6 : 2)*factor, 0, 100);
 
   // happiness drifts
@@ -928,7 +931,7 @@ function craftRecipe(id,batches=1){
     recipeOutput(g,id); made++;
     if(document.getElementById("modal-root").firstChild) break;
   }
-  if(made) pushLog(g,`Crafted ${recipeName(id)} x${made}.`+(r.item?" Check Inventory to equip or take it.":""),"good");
+  if(made) pushLog(g,`Crafted ${recipeName(id)} x${made}.`+(r.item?" Check your Pack to equip or take it.":""),"good");
   render(); save();
 }
 function campAction(action){
@@ -975,7 +978,7 @@ function sleepConditions(g){
   nearbyTile(g,3,t=>{ if(MAP_ENTITIES[t.entity?.type]?.hostile) threats++; return false; });
   const watch=g.followers.some(s=>s.health>30 && !s.isChild);
   const incident=home?0:clamp(0.30+threats*0.06+(biome.dark?0.1:0)+(isNight(g)?0.05:0)-(tent?0.12:0)-(fire?0.1:0)-(watch?0.06:0),0.04,0.7);
-  const recovery=home?14:tent&&bag?12:bag?9:roof?7:4;
+  const recovery=home?14:tent&&bag?12:bag?11:roof?10:10;
   return {roof,fire,loss,incident,recovery,watch,radiation:!!biome.radiation,
     label:home?home.building.name:tent?"Portable tent"+(bag?" + sleeping bag":""):camp?.leanTo?"Lean-to"+(bag?" + sleeping bag":""):bag?"Sleeping bag in the open":"Bare ground"};
 }
@@ -994,23 +997,28 @@ function sleepFor(minutes,rest=false){
   const g=G,p=g.survivors[0],epoch=_activityEpoch;
   if(p.health<=0 || _combat) return;
   cancelAutoWalk();
+  _sleeping=true;
   let elapsed=0;
-  while(elapsed<minutes && p.health>0 && g.survivors[0]===p && _activityEpoch===epoch){
-    const fuel=g.camps[positionKey(g)]?.fuel || 0;
-    const step=Math.min(30,minutes-elapsed,fuel>0?fuel:Infinity), c=sleepConditions(g);
-    const spent=passMinutes(g,step); elapsed+=spent;
-    if(spent<step || _activityEpoch!==epoch || g.survivors[0]!==p || p.health<=0) break;
-    p.warmth=clamp(p.warmth-c.loss*step/60+(c.fire?step/30:0),0,100);
-    const damage=(p.warmth<=0?16:p.warmth<15?8:0)+(c.radiation?6:0);
-    p.health=clamp(p.health-damage*step/60,0,p.maxHealth);
-    if(!rest || p.energy<60) p.energy=clamp(p.energy+(rest?14:c.recovery)*step/60,0,rest?60:100);
-    if(p.health<=0){ pushLog(g,"Exposure overtook you while resting.","bad"); removeDead(g); break; }
-    if(c.roof && c.loss===0 && !c.radiation && p.hunger>40 && p.thirst>40) p.health=clamp(p.health+step/60,0,p.maxHealth);
-    if(chance(1-Math.pow(1-c.incident,step/480))){
-      pushLog(g,"Movement outside wakes you. Your rest is interrupted!","bad");
-      startCombat(pick(["wild_dogs","wolves","thieves"])); break;
+  try{
+    while(elapsed<minutes && p.health>0 && g.survivors[0]===p && _activityEpoch===epoch){
+      const fuel=g.camps[positionKey(g)]?.fuel || 0;
+      const step=Math.min(30,minutes-elapsed,fuel>0?fuel:Infinity), c=sleepConditions(g);
+      const spent=passMinutes(g,step); elapsed+=spent;
+      if(spent<step || _activityEpoch!==epoch || g.survivors[0]!==p || p.health<=0) break;
+      p.warmth=clamp(p.warmth-c.loss*step/60+(c.fire?step/30:0),0,100);
+      const damage=(p.warmth<=0?16:p.warmth<15?8:0)+(c.radiation?6:0);
+      p.health=clamp(p.health-damage*step/60,0,p.maxHealth);
+      if(!rest || p.energy<60) p.energy=clamp(p.energy+(rest?10:c.recovery)*step/60,0,rest?60:100);
+      if(p.health<=0){ pushLog(g,"Exposure overtook you while resting.","bad"); removeDead(g); break; }
+      if(c.roof && c.loss===0 && !c.radiation && p.hunger>40 && p.thirst>40) p.health=clamp(p.health+step/60,0,p.maxHealth);
+      if(chance(1-Math.pow(1-c.incident,step/480))){
+        pushLog(g,"Movement outside wakes you. Your rest is interrupted!","bad");
+        startCombat(pick(["wild_dogs","wolves","thieves"])); break;
+      }
+      if(document.getElementById("modal-root").firstChild) break;
     }
-    if(document.getElementById("modal-root").firstChild) break;
+  } finally {
+    _sleeping=false;
   }
   pushLog(g,`Rested ${timeText(elapsed)}${elapsed<minutes?" before interruption":""}.`,"info"); render(); save();
 }

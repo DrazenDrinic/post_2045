@@ -4,7 +4,7 @@
 Everything that costs you ⏳ time, ⚡ energy, 📦 resources, or 🧠 knowledge — action by action,
 building by building, recipe by recipe.
 
-> **Last updated:** 2026-10-11 (shared storage, carried pickups, water containers, finite reserves and recovery)
+> **Last updated:** 2026-10-11 (sleep/rest energy rebalance — base 10 ⚡/hr, decay pauses during sleep; tile interaction overhaul)
 >
 > **⚠️ Keep this file in sync.** This is a **hand-maintained** document (not auto-generated).
 > If you change any game data or cost, browser behavior, or numbers below, you must update this file.
@@ -199,7 +199,7 @@ repeatable gathering: uncollected material stays in the source. Actual collected
 | Dig | ⛏ | 20 min¹ | 3 | — | 3 Sand + 2 Clay |
 | Fish | 🎣 | 30 min | 2 | next to water | 1–3 Meat |
 | Bandage | 🩹 | 5 min | 0 | 1 Bandages | **+15 Health**, clears Injured |
-| Rest | 💤 | 30 min | — | — | **+14 ⚡ / hour** (cap 60) |
+| Rest | 💤 | 30 min | — | — | **+10 ⚡ / hour** (≈ +5 per rest, cap 60) |
 | Sleep | 🛏 | 2 / 4 / 8 h | — | see §5 | restores energy, recovers |
 | Light fire | 🔥 | 10 min | 1 | 1 Wood | starts a field camp fire |
 | Pitch tent | ⛺ | 15 min | 1 | Portable Tent | shelter for the night |
@@ -226,16 +226,16 @@ Passive auto-consumption happens at each phase tick: survivors eat/drink when a 
 (Meat gives +20 hunger, dirty water +15 thirst with a 10% disease risk).
 
 ### Rest
-- **Rest (30 min):** recovers **14 energy per hour** (≈ +7 per rest), capped at **60**.
+- **Rest (30 min):** recovers **10 energy per hour** (≈ +5 per rest), capped at **60**. Energy decay pauses while resting.
 
 ### Sleep (`sleepFor`) — choose 2 h / 4 h / 8 h
-Recovery rate and warmth loss depend on your shelter:
+Recovery rate and warmth loss depend on your shelter. **Energy decay pauses during sleep**, so 8 h on bare ground nets ≈ **80 energy**; shelter adds a small bonus on top and mainly cuts warmth loss and incident risk.
 
 | Shelter | ⚡ Energy / hour | Notes |
 |---|---:|---|
-| Ground (no shelter) | 4 | highest incident risk |
-| Roof (lean-to / tent) | 7 | |
-| Sleeping Bag | 9 | |
+| Ground (no shelter) | 10 | highest incident risk |
+| Roof (lean-to / tent) | 10 | lower warmth loss & incidents |
+| Sleeping Bag | 11 | |
 | Tent **+** Bag | 12 | best field sleep |
 | Settlement housing | 14 | sleep indoors, safest |
 
@@ -672,7 +672,7 @@ clamped to **0.25–0.88**. Costs **30 min + 4 ⚡**. Animals **flee on contact*
 |---|:---:|---|
 | 🍽 Hunger | −4 | children ×0.5 |
 | 💧 Thirst | −5 | children ×0.5 |
-| ⚡ Energy | −3 (player) / −2 (others) | |
+| ⚡ Energy | −3 (player) / −2 (others) | **paused while sleeping / resting** |
 | 🔥 Warmth | −6 night / −2 day | children ×0.5; **+4** if a fire burns at night |
 
 ### Health damage thresholds
@@ -699,7 +699,7 @@ clamped to **0.25–0.88**. Costs **30 min + 4 ⚡**. Animals **flee on contact*
 ### Camps & fires
 - Field fire: **1 Wood = 240 min (4 h)** of fuel.
 - Campfire (settlement): consumes **1 Wood/day** automatically (evening), or goes out.
-- Rest recovers **14 ⚡/hour** (cap 60). Sleep recovers 4–14 ⚡/hour by shelter (§5).
+- Rest recovers **10 ⚡/hour** (≈ +5 per rest, cap 60). Sleep recovers 10–14 ⚡/hour by shelter (§5). Energy decay pauses during sleep/rest.
 
 ### Raids & losses
 - Hostile entities near the settlement can **attack** (moved each phase).

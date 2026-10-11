@@ -229,7 +229,7 @@ const CHUNK = 20;
 const WORLD_VERSION = 1; // Increment only with an explicit terrain migration.
 const MAX_CACHED_CHUNKS = 48;
 const ACTIVE_MAP_RADIUS = 28;
-const VIEW_W = 33, VIEW_H = 23;
+const VIEW_W = 33, VIEW_H = 27;
 const VISION_DAY = 6;
 const VISION_NIGHT = 3;
 const STEP_PER_PHASE = 14; // accumulated movement cost per phase tick

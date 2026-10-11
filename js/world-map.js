@@ -369,16 +369,16 @@ function recruitFollowersAtVillage(g){
   g.survivors[0].happiness = clamp(g.survivors[0].happiness + 5, 0, 100);
 }
 
-function startAutoWalk(tx, ty){
+function startAutoWalk(tx, ty, onArrive){
   cancelAutoWalk();
-  if (G.playerX===tx && G.playerY===ty) return;
+  if (G.playerX===tx && G.playerY===ty){ if (onArrive) onArrive(); return; }
   const path = findAutoPath(G, tx, ty);
   if (!path.length){
     pushLog(G, "No known passable route there.", "warn");
     render(); save();
     return;
   }
-  _autoWalk = {tx, ty, path, paused:false};
+  _autoWalk = {tx, ty, path, paused:false, onArrive};
   stepAutoWalk();
 }
 
@@ -391,7 +391,7 @@ function stepAutoWalk(){
   const w = _autoWalk; if (!w) return;
   // stop if encounter modal is open
   if (document.getElementById("modal-root").firstChild){ cancelAutoWalk(); return; }
-  if (G.playerX===w.tx && G.playerY===w.ty){ cancelAutoWalk(); render(); return; }
+  if (G.playerX===w.tx && G.playerY===w.ty){ const cb=w.onArrive; cancelAutoWalk(); render(); if(cb) cb(); return; }
   if (!w.path || !w.path.length){ cancelAutoWalk(); render(); return; }
   const next = w.path.shift();
   const dxRaw = Math.sign(next[0] - G.playerX);
@@ -535,49 +535,60 @@ function openTileActionDialog(g, x, y){
     const minutes=route.reduce((n,[rx,ry])=>n+travelCost(g,tileAt(g, rx, ry).biome).minutes,0);
     const energy=route.reduce((n,[rx,ry])=>n+travelCost(g,tileAt(g, rx, ry).biome).energy,0);
     lines.push(`<p class="info">Known route: ${route.length?`${timeText(minutes)} / ${fmt(energy)} energy`:"no route"}.</p>`);
-    buttons.push({label:"Walk here", primary:true, action:()=>{ closeModal(); startAutoWalk(x,y); }});
+    buttons.push({label:"Walk here", primary:true, hint:"Auto-walk to this tile. You will follow the shortest known path.", action:()=>{ closeModal(); startAutoWalk(x,y,()=>openTileActionDialog(g,x,y)); }});
   }
   if (feature && !feature.hidden){
     const minutes=feature.underground?null:featureMinutes(g,tile.feature.type);
     const blocked=featureSupplyBlocker(g,tile,x,y);
-    buttons.push({label:dist<=1 ? `Search / use${minutes!=null?` (${timeText(minutes)})`:""}` : "Walk closer to search",disabled:dist<=1 && !!blocked,title:blocked, action:()=>{
+    buttons.push({label:dist<=1 ? `Search / use${minutes!=null?` (${timeText(minutes)})`:""}` : "Walk closer to search",disabled:dist<=1 && !!blocked,title:blocked, hint:`Harvest or interact with ${feature.name}. Costs time and 2 energy. Tools like pickaxe or axe speed up gathering. The feature may have limited charges.`, action:()=>{
       closeModal();
-      if (dist<=1){ handleFeature(g, tile, x, y); render(); save(); }
-      else startAutoWalk(x,y);
+      if (dist<=1){ handleFeature(g, tile, x, y); render(); save(); setTimeout(()=>{ if(!document.getElementById("modal-root").firstChild && tileAt(g,x,y).feature) openTileActionDialog(g,x,y); },50); }
+      else startAutoWalk(x,y,()=>openTileActionDialog(g,x,y));
     }});
   }
   const waterKind = tileWaterKind(tile);
   if (waterKind){
     const why=sourceBlocker(g,sourceAt(g,x,y,"water"),[waterKind==="clean"?"water":"dirty_water"]);
-    buttons.push({label:`Fetch ${waterKind} water (10m)`,disabled:dist>1 || !!why,title:why, action:()=>{ closeModal(); fetchWaterFromTile(g, tile); }});
+    buttons.push({label:`Fetch ${waterKind} water (10m)`,disabled:dist>1 || !!why,title:why, hint:`Collect ${waterKind} water from this source. Takes 10 minutes and 1 energy. ${waterKind==="dirty"?"Dirty water must be boiled before drinking.":"Clean water is safe to drink immediately."}`, action:()=>{ closeModal(); fetchWaterFromTile(g, tile); }});
   }
   if (entity && entity.friendly){
-    buttons.push({label:dist<=3 ? "Talk" : "Walk to talk", action:()=>{
+    buttons.push({label:dist<=3 ? "Talk" : "Walk to talk", hint:`Speak with ${entity.name}. You may be able to recruit them, trade, or learn something.`, action:()=>{
       closeModal();
       if (dist<=3) openFriendlyDialog(g, entity, x, y);
-      else startAutoWalk(x,y);
+      else startAutoWalk(x,y,()=>openTileActionDialog(g,x,y));
     }});
   }
   if (entity && entity.huntable){
     const canHunt = dist>=1 && dist<=3 && playerAmount(g,"arrows")>=1 && carriedTool(g,"bow");
-    buttons.push({label:"Hunt with arrow", disabled:!canHunt, title:canHunt ? "" : "Need arrows and range 1-3.", action:()=>{
+    buttons.push({label:"Hunt with arrow", disabled:!canHunt, title:canHunt ? "" : "Need arrows and range 1-3.", hint:"Shoot the animal with a bow and arrow. Requires a bow equipped and at least 1 arrow. Must be 1-3 tiles away.", action:()=>{
       closeModal(); huntTarget({tile, x, y, entity, dist});
     }});
   }
   if (entity && entity.hostile){
-    buttons.push({label:dist<=1 ? "Engage" : "Approach / attack", action:()=>{ closeModal(); if (dist<=1) encounterTile(g,x,y); else startAutoWalk(x,y); }});
+    buttons.push({label:dist<=1 ? "Engage" : "Approach / attack", hint:"Start combat with this enemy. Be prepared — you may take damage or die.", action:()=>{ closeModal(); if (dist<=1) encounterTile(g,x,y); else startAutoWalk(x,y,()=>openTileActionDialog(g,x,y)); }});
   }
   if (dist<=1 && (building || (x===g.villageX && y===g.villageY))){
-    buttons.push({label:"Rest here (30m)", action:()=>{ closeModal(); playerAction("rest"); }});
-    buttons.push({label:"Warm up", action:()=>{ closeModal(); playerAction("warm_fire"); }});
+    buttons.push({label:"Rest here (30m)", hint:"Take a short 30-minute rest to recover +5 energy (up to 60). Exposure and encounters still apply.", action:()=>{ closeModal(); playerAction("rest"); }});
+    buttons.push({label:"Warm up", hint:"Warm yourself by a nearby fire. Restores +30 warmth. Requires a lit campfire within range.", action:()=>{ closeModal(); playerAction("warm_fire"); }});
   }
   if(dist<=1 && tile.feature && ["iron_vein","mine_entrance","fish_pool","spring","stream","pond"].includes(tile.feature.type)){
-    buttons.push({label:"Claim site (2 wood + rope, 30m)",disabled:!!g.workSites[x+","+y],action:()=>{closeModal();claimWorkSite(x,y);}});
+    const claimed=!!g.workSites[x+","+y], canAfford=playerAmount(g,"wood")>=2 && playerAmount(g,"rope")>=1;
+    const kind=["iron_vein","mine_entrance"].includes(tile.feature.type)?"mining":"fishing";
+    buttons.push({label:"Claim site (2 wood + rope, 30m)",disabled:claimed || !canAfford,title:claimed?"Already claimed":!canAfford?"Need 2 wood and 1 rope":"", hint:`Mark this as a ${kind} work site. Costs 2 wood + 1 rope and 30 minutes. Once claimed, you can assign survivors to work here from the Jobs tab. Workers will automatically gather resources.`, action:()=>{closeModal();claimWorkSite(x,y);}});
   }
   if(dist<=1 && building && (tile.settlementBuilding==="campfire" || building.effects?.storage || building.effects?.food_storage)){
-    buttons.push({label:"Open base storage",action:()=>{closeModal();_activeTab="inventory";render();}});
+    buttons.push({label:"Open base storage",hint:"Open your settlement inventory to manage stored resources, gear, and supplies.",action:()=>{closeModal();_activeTab="base";render();}});
   }
-  buttons.push({label:"Cancel", action:closeModal});
+  if (x===g.playerX && y===g.playerY){
+    buttons.push({label:"Leave", hint:"Step off this tile and close the menu.", action:()=>{
+      closeModal();
+      const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dx,dy] of dirs){ const nx=x+dx,ny=y+dy; if(inBounds(nx,ny) && !BIOMES[tileAt(g,nx,ny).biome].blocks){ tryMove(g,dx,dy); break; } }
+      render(); save();
+    }});
+  } else {
+    buttons.push({label:"Cancel", action:closeModal});
+  }
   showModal({title:titleParts.join(" / "), body:lines.join(""), buttons});
 }
 
@@ -613,7 +624,7 @@ function encounterTile(g, x, y){
   if (t.feature){
     const f=MAP_FEATURES[t.feature.type];
     if(f.hidden || (f.damage && !f.loot && !f.event) || (f.energyLoss && !f.loot && !f.event)) handleFeature(g,t,x,y);
-    else pushLog(g,`Found ${f.name}. Use Search nearby or right-click to investigate.`,"info");
+    else pushLog(g,`${f.icon} ${f.name} — click the tile or use Nearby buttons to interact.`,"info");
   }
 }
 
