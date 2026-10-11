@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="ruins-title ruins-desc">
+  <title id="ruins-title">Overgrown ruins</title>
+  <desc id="ruins-desc">An abandoned brick house with a broken roof, boarded window, cracked masonry, and ivy reclaiming the walls.</desc>
+  <defs>
+    <linearGradient id="ruins-wall" x1="64" y1="88" x2="144" y2="197" gradientUnits="userSpaceOnUse"><stop stop-color="#b5a18a"/><stop offset="1" stop-color="#827768"/></linearGradient>
+    <linearGradient id="ruins-roof" x1="106" y1="40" x2="196" y2="112" gradientUnits="userSpaceOnUse"><stop stop-color="#9b7160"/><stop offset="1" stop-color="#654f48"/></linearGradient>
+  </defs>
+  <ellipse cx="129" cy="221" rx="106" ry="15" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="m24 200 82-33 130 32-83 37Z" fill="#53634d"/>
+    <path d="m48 113 59-67 55 81v87l-114-27Z" fill="url(#ruins-wall)"/>
+    <path d="m162 127 55-24v75l-13 6-1 17-41 13Z" fill="#727669"/>
+    <path d="m108 46 56-22 19 27-13 12 13 19 16-1 31 29-68 28Z" fill="url(#ruins-roof)"/>
+    <path d="m119 52 42-16 10 14-14 13 19 29 21-1 15 16-48 20Z" fill="#303c3c"/>
+    <path d="m137 51 53 66m-32-82 15 20m-40 33 45-16m-31 38 31-12" stroke="#a28b68" stroke-width="6"/>
+    <path d="m164 24 19 27-13 12 13 19 16-1 31 29-21 8-27-22-12 3-30-42 14-12-8-13Z" fill="#9f735c"/>
+    <path d="m158 42 16-6m3 20-11 7m12 23 11-2m3 18 22-8" stroke="#c09371" stroke-width="3"/>
+    <path d="m32 114 70-77 26 30-5 11 22 23 5-2 25 33-12 11-59-78-60 60Z" fill="#6e5b4c"/>
+    <path d="m43 114 60-66 14 15" stroke="#c3a886" stroke-width="3"/>
+    <path d="m49 166 20 5v19l-21-4Zm20 9 19 5v15l-19-5Zm-20-25 20 5v16l-20-5Z" fill="#a56e54" stroke-width="2"/>
+    <path d="m57 153 1 15m20 9v15" stroke="#d0ab83" stroke-width="2"/>
+    <path d="m92 139 34 8v59l-34-8Z" fill="#293a3a"/>
+    <path d="m99 150 18 4v47l-18-4Z" fill="#40504a" stroke-width="2"/>
+    <path d="m94 194 24 6 13 11-26-6Z" fill="#b8a185" stroke-width="3"/>
+    <path d="m57 117 23 5v27l-23-5Z" fill="#34474b" stroke-width="3"/>
+    <path d="m52 125 34 12-1 9-34-12Z" fill="#b59b70" stroke-width="3"/>
+    <path d="m179 127 22-9v28l-22 10Z" fill="#34474b" stroke-width="3"/>
+    <path d="m181 143 16-20-2 20" stroke="#8da79c" stroke-width="2"/>
+    <path d="m118 91-8 15 9 14-8 11m35 17-9 14 7 9-8 14m53-16-8 13 5 11" stroke="#4c514a" stroke-width="3"/>
+    <path d="m97 94 8-10 10 14Z" fill="#33423e" stroke-width="3"/>
+    <path d="M211 114c-26 15-10 48-28 66-8 8-10 19-11 29" stroke="#526d47" stroke-width="5"/>
+    <path d="M205 126c-15 2-21-5-20-14 13-2 19 4 20 14Zm-5 14c1-14 9-17 17-17 0 11-5 16-17 17Zm0 17c-16-1-21-10-18-18 13 1 19 8 18 18Zm-10 15c3-12 13-15 21-11-4 11-12 15-21 11Zm-9 13c-14-2-19-9-16-19 12 2 18 10 16 19Zm-6 16c4-11 12-14 21-10-5 10-13 12-21 10Z" fill="#86a169" stroke-width="2.5"/>
+    <path d="m34 204 9-13 21 7-5 13-17 3Z" fill="#a5947b" stroke-width="3"/>
+    <path d="m64 216 11-11 21 4-8 14Z" fill="#b49e80" stroke-width="3"/>
+    <path d="m190 216 12-10 18 4-4 12-16 3Z" fill="#8f917c" stroke-width="3"/>
+    <path d="m125 225 4-16 6 13 9-10m-119-2 5-13 3 11m181-8 6-14 1 12 8-5" stroke="#a2b276" stroke-width="3"/>
+  </g>
+</svg>

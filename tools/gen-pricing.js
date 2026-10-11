@@ -37,7 +37,7 @@ for (const name of [
   "RESOURCES","RESOURCE_WEIGHTS","BUILDINGS","JOBS","KNOWLEDGE","RECIPES","ITEMS",
   "ENEMIES","MAP_ENTITIES","MAP_FEATURES","CROPS","BIOMES","TRAVEL","ACTION_COSTS",
   "ACTION_ENERGY","LOCATIONS","UNDERGROUND_SITES","STARTING_RESOURCES","BASE_RES_CAP",
-  "BUILDING_CAP_MULTIPLIER","REALTIME_MS",
+  "BUILDING_CAP_MULTIPLIER","REALTIME_MS","SOURCE_RULES","SOURCE_DEFAULT_STOCK","BASE_LIQUID_CAP",
 ]) T[name] = vm.runInContext(name, ctx);
 const STARTER = vm.runInContext("[...STARTER_BUILDINGS]", ctx);
 const STARTER_SET = new Set(STARTER);
@@ -67,7 +67,7 @@ const CODE = {
   weaponsMitigate: 0.8,                               // actions.js raidEvent() (2+ weapons)
   scout: { consume:"1 food + 1 clean water", cooldownH:12 },  // actions.js runScout()
   underground: { shallow:45, deep:90, cooldownH:24 }, // actions.js / data.js UNDERGROUND_SITES
-  claim: { cost:"2 wood + 1 rope", min:30, mineDays:40 },     // world-map.js claimWorkSite()
+  claim: { cost:"2 wood + 1 rope", min:30 },     // world-map.js claimWorkSite()
   outpost: { cost:"6 wood + 1 rope", min:30, haulPerDay:8 },  // world-map.js establishOutpost()/haulCaches()
   bandage:15, medicine:25,                            // actions.js (bandage / treat)
   featureSearch: { renewable:5, ordinary:20, mineral:30, event:15 }, // world-map.js featureMinutes()
@@ -103,8 +103,8 @@ function buildingEffect(b){
   const e = b.effects || {}, out = [];
   if (e.farm) out.push("plant, water, fertilize & harvest crops (farmers automate a plot)");
   if (e.housing) out.push(`houses ${e.housing}`);
-  if (e.storage) out.push(`+${e.storage} storage (all resources)`);
-  if (e.food_storage) out.push(`+${e.food_storage} food/crop/meat storage`);
+  if (e.storage) out.push(`+${e.storage} shared storage load (resources and gear)`);
+  if (e.food_storage) out.push(`+${e.food_storage} food/crop/meat-only load`);
   if (e.warmth) out.push("provides warmth");
   if (e.cook) out.push("lets you cook");
   if (e.produce) out.push(`produces ${fmtProd(e.produce)}/day`);
@@ -331,7 +331,7 @@ w();
 
 w(`### 🎒 Camping & field work`);
 w();
-w(`Town storage is reachable only inside the settlement footprint; outside it you use carried supplies. Pack capacity is **30 load**, **45 with a canvas backpack**, or **65 with a framed backpack**. Most small items weigh 0.05–0.3; wood weighs ${WT.wood}, stone/ore ${WT.stone}.`);
+w(`All personal pickups and crafting outputs enter your pack, even at home. Return on or next to the home campfire or a storage building to transfer. Pack capacity is **30 load**, **45 with a canvas backpack**, or **65 with a framed backpack**, including equipped gear. Most small items weigh 0.05–0.3; wood weighs ${WT.wood}, stone/ore ${WT.stone}. Water containers hold **${T.BASE_LIQUID_CAP} units** initially; each carried canteen adds **${IT.canteen.liquidCapacity}**, each bucket **${IT.bucket.liquidCapacity}**. Clean and dirty water share container capacity and also count toward pack weight.`);
 w();
 w(`| Field action | Materials | Time |`);
 w(`|---|---|---:|`);
@@ -347,7 +347,7 @@ w(`| Refuel light | 1 wood / 1 oil | 10 min |`);
 w(`| Claim mine / fishing site | ${CODE.claim.cost} | ${CODE.claim.min} min |`);
 w(`| Establish supply outpost | ${CODE.outpost.cost} | ${CODE.outpost.min} min |`);
 w();
-w(`A claimed mine supports **${CODE.claim.mineDays} worker-days**; fishing sites are renewable; haulers recover **${CODE.outpost.haulPerDay} resource units/day** from supply outposts.`);
+w(`Claimed mines and fishing sites draw from finite reserves shared with the player; exhausted sources recover on their game-time schedule. Haulers recover up to **${CODE.outpost.haulPerDay} resource units/day** from supply outposts, limited by base space. Full storage pauses production before inputs are spent.`);
 w();
 
 w(`### 🌾 Farming & work orders`);
@@ -395,7 +395,16 @@ for (const cat of catOrder){
   w(`</details>`);
 }
 w();
-w(`**Storage:** base cap is ${CAP} per resource; a storage shed adds +${B.storage_shed.effects.storage}, a warehouse +${B.warehouse.effects.storage}, a food cellar +${B.food_cellar.effects.food_storage} to food/crops/meat. Excess food spoils above ~90% full.`);
+w(`**Storage:** the campfire provides ${CAP} shared load; each storage shed adds ${B.storage_shed.effects.storage}, warehouse ${B.warehouse.effects.storage}, and fuel depot ${B.fuel_depot.effects.storage}. Stored gear counts. Each food cellar adds ${B.food_cellar.effects.food_storage} food/crops/meat-only load, used before general storage. Transfers move only what fits; the rest remains in the pack. Existing over-capacity saves retain their supplies. Food can spoil when total storage load exceeds 90% of general + cellar capacity.`);
+w(``);
+w(`### Finite resource reserves and recovery`);
+w(`All gathering methods and worker collection share location-based stock. Recovery starts on the first withdrawal, uses game time, and survives saves and chunk eviction. Empty sources and full packs block collection without spending time, energy or durability. Finite loot overflow stays at the source; ordinary gathering leaves uncollected stock untouched.`);
+w(``);
+w(`| Reserve family | Starting supply | Recovery cycle |`);
+w(`|---|---|---|`);
+for(const rule of Object.values(T.SOURCE_RULES)) w(`| ${rule.name} | ${Object.keys(rule.stock).length?fmtCost(rule.stock):`Feature loot maximum ×4 for each material; otherwise ${T.SOURCE_DEFAULT_STOCK} per material`} | ${tmin(rule.minutes)} |`);
+w(``);
+w(`Wildlife reserves are shared within 8×8 areas; moving animals retain their origin. Built water collectors and livestock buildings have recoverable reserves scaled by building count. Crops require another growth cycle. Quick Scout retains a 12-hour route cooldown, underground routes 24 hours and event sites 72 hours. A trader has one bundle, restocking 24 hours after purchase; both payment and pack/container space are checked before exchange.`);
 w();
 w(`---`);
 
@@ -482,6 +491,7 @@ for (const id in IT){ const it = IT[id], r = RC[id], s = [];
   if (it.durability) s.push(`dur ${it.durability}`);
   if (it.weight != null) s.push(`wt ${it.weight}`);
   if (it.capacity) s.push(`pack ${it.capacity}`);
+  if (it.liquidCapacity) s.push(`water capacity +${it.liquidCapacity}`);
   if (it.armor) s.push(`armor ${it.armor}`);
   if (it.insulation) s.push(`insul ${it.insulation}`);
   if (it.vision) s.push(`+${it.vision} vision`);

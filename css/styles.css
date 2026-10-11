@@ -123,6 +123,10 @@
   .ctx-menu .ctx-actions{display:flex;flex-direction:column;gap:3px}
   .ctx-menu .ctx-actions button{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 8px;font-size:12px}
   .ctx-menu .ctx-actions button .sub{color:var(--dim);font-size:10px}
+  .ctx-menu .ctx-break{margin:4px 0 2px 0;border:1px solid var(--line);border-radius:3px;background:#0c1115;padding:3px 6px}
+  .ctx-menu .cb-row{display:flex;justify-content:space-between;gap:8px;line-height:1.6}
+  .ctx-menu .cb-lbl{color:var(--muted)}
+  .ctx-menu .cb-v{font-variant-numeric:tabular-nums;white-space:nowrap}
   /* Sage chat modal */
   .sage-modal{max-width:640px}
   .sage-history{background:#0c1115;border:1px solid var(--line);border-radius:3px;padding:8px;height:300px;overflow-y:auto;font-size:12px;display:flex;flex-direction:column;gap:6px}

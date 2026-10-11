@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="shelter-title shelter-desc">
+  <title id="shelter-title">Survivor shelter</title>
+  <desc id="shelter-desc">An isometric patched timber shelter with a corrugated teal roof, warm doorway, and a rain barrel.</desc>
+  <defs>
+    <linearGradient id="shelter-roof" x1="63" y1="62" x2="163" y2="133" gradientUnits="userSpaceOnUse"><stop stop-color="#729c97"/><stop offset="1" stop-color="#3d6468"/></linearGradient>
+    <linearGradient id="shelter-door" x1="107" y1="142" x2="107" y2="202" gradientUnits="userSpaceOnUse"><stop stop-color="#c8914d"/><stop offset="1" stop-color="#f3cb78"/></linearGradient>
+  </defs>
+  <ellipse cx="129" cy="221" rx="105" ry="15" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m27 198 87-37 118 35-86 38Z" fill="#555d48"/>
+    <path d="m41 116 72-61 53 83-3 75-120-30Z" fill="#9e8057"/>
+    <path d="m163 127 54-23v78l-54 31Z" fill="#605d48"/>
+    <path d="m52 129 106 27M50 145l108 28M50 163l108 27m12-38 36-17m-36 35 36-18m-36 37 36-20" stroke="#594b39" stroke-width="3"/>
+    <path d="M52 121v62m98-49v67m55-86v65" stroke="#c0a573" stroke-width="5"/>
+    <path d="m108 57 64-25 59 76-68 30Z" fill="url(#shelter-roof)"/>
+    <path d="m27 118 78-67 68 84-11 9-58-71-65 56Z" fill="#b18a59"/>
+    <path d="m109 54 63-24 62 77-11 4-55-67-52 20Z" fill="#8daf9e"/>
+    <path d="m125 64 51 62m-34-70 50 64m-32-71 50 63" stroke="#294e58" stroke-width="5"/>
+    <path d="m121 68 49 60m-32-69 49 62m-32-71 49 62" stroke="#91b3a6" stroke-width="2"/>
+    <path d="m145 83 32-12 21 27-33 13Z" fill="#a67450" stroke-width="3"/>
+    <path d="m154 84 12 17m0-21 12 17m0-21 11 16" stroke="#dfb078" stroke-width="2"/>
+    <path d="m91 136 37 9v58l-37-9Z" fill="#293936"/>
+    <path d="m98 145 23 6v48l-23-6Z" fill="url(#shelter-door)" stroke-width="3"/>
+    <path d="m105 150 1 45" stroke="#94623d" stroke-width="2"/>
+    <path d="m98 193 23 6 28 17-35-9Z" fill="#e8b665" stroke="none" opacity=".3"/>
+    <path d="m54 123 24 6v29l-24-6Z" fill="#344e53" stroke-width="3"/>
+    <path d="m66 126 1 29m-12-18 22 6" stroke="#bfaa79" stroke-width="3"/>
+    <path d="m81 178 7-1 2 18-9-2Z" fill="#c5ad78" stroke-width="2"/>
+    <path d="m150 69 12-5V41l-12 4Z" fill="#846751"/>
+    <path d="m147 44 17-7 7 4-17 7Z" fill="#baa082" stroke-width="3"/>
+    <path d="M157 29c-8-11 13-10 5-22" stroke="#91a19a" stroke-width="5" opacity=".45"/>
+    <path d="M181 177h38v34c0 11-38 11-38 0Z" fill="#597f7b"/>
+    <ellipse cx="200" cy="177" rx="19" ry="7" fill="#94aaa0"/>
+    <path d="M183 191q17 8 34 0m-34 15q17 8 34 0" stroke="#b7b89a" stroke-width="4"/>
+    <path d="M188 184v27" stroke="#89a79a" stroke-width="2"/>
+    <path d="m35 208 7-15 3 14 8-7m110 25 7-11 1 10 9-5" stroke="#97ab6b" stroke-width="3"/>
+    <path d="m61 208 15-3 10 6-15 4Z" fill="#95937b" stroke-width="3"/>
+  </g>
+</svg>

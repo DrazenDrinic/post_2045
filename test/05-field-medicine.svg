@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="medicine-title medicine-desc">
+  <title id="medicine-title">Field medicine</title>
+  <desc id="medicine-desc">A weathered red medical case with a cream cross, brass latches, and a roll of bandages.</desc>
+  <defs>
+    <linearGradient id="medicine-case" x1="49" y1="98" x2="177" y2="212" gradientUnits="userSpaceOnUse"><stop stop-color="#b66859"/><stop offset=".5" stop-color="#934c46"/><stop offset="1" stop-color="#663a39"/></linearGradient>
+    <linearGradient id="medicine-bandage" x1="153" y1="168" x2="207" y2="218" gradientUnits="userSpaceOnUse"><stop stop-color="#f1e4bd"/><stop offset="1" stop-color="#b5a783"/></linearGradient>
+  </defs>
+  <ellipse cx="128" cy="220" rx="95" ry="14" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M95 85V64q0-12 12-15l34-6q13-2 15 12l2 19-13 3-2-19-35 7v18Z" fill="#b8b7a0"/>
+    <path d="M108 56 139 50" stroke="#e6dab6" stroke-width="3"/>
+    <path d="m40 102 137-27 37 26-135 32Z" fill="#c17a65"/>
+    <path d="m177 75 37 26v89q0 11-12 15l-26 10-12-100Z" fill="#683e3d"/>
+    <path d="m40 102 129 7q12 0 12 13v79q0 11-12 13l-117-13q-12-1-12-13Z" fill="url(#medicine-case)"/>
+    <path d="m40 102 137-27 4 40-129 21q-12 1-12-10Z" fill="#a75d50"/>
+    <path d="m49 108 117-24m-117 59v39" stroke="#dfa082" stroke-width="3"/>
+    <path d="m181 115 33-14v25l-33 13" fill="#76423e"/>
+    <path d="m51 160 4 29 24 3m76-53 13-2v58l-9 3" stroke="#6b3836" stroke-width="3"/>
+    <path d="m98 140 23 2v18l18 2v22l-18-2v19l-23-3v-18l-18-2v-22l18 2Z" fill="#f1dfb6" stroke-width="3"/>
+    <path d="m110 146-6 1v18l-18-1" stroke="#fff0d0" stroke-width="2"/>
+    <path d="m65 114 16-3v27l-16 2Z" fill="#cfb273" stroke-width="3"/>
+    <path d="m145 100 16-3v28l-16 2Z" fill="#cfb273" stroke-width="3"/>
+    <path d="m70 124 6-1m74-14 6-1" stroke="#6c624c" stroke-width="3"/>
+    <path d="m42 184 11 1 1 14-9-3-5-6Zm125 15 14-3v9l-7 8-10-1Z" fill="#aeb3a1" stroke-width="3"/>
+    <path d="m188 153 15-5m-15 11 7-2m-131-8 9 1m-5 26 6 1" stroke="#dfac89" stroke-width="2.5"/>
+    <path d="m162 186 35-13 23 30-29 17c-10 7-35-6-37-18Z" fill="url(#medicine-bandage)"/>
+    <path d="m158 194 23 18m-13-24 24 20m-11-25 23 19" stroke="#a99c7b" stroke-width="2"/>
+    <path d="m169 210-9 12 37 7 15-9-20-5" fill="#d3c6a2" stroke-width="3"/>
+    <ellipse cx="207" cy="186" rx="16" ry="24" transform="rotate(-32 207 186)" fill="#ece0b9"/>
+    <ellipse cx="207" cy="186" rx="9" ry="15" transform="rotate(-32 207 186)" stroke="#b1a280" stroke-width="3"/>
+    <ellipse cx="207" cy="186" rx="3.5" ry="7" transform="rotate(-32 207 186)" fill="#6c6e61" stroke-width="2"/>
+  </g>
+</svg>

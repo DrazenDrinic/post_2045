@@ -2,13 +2,28 @@
 
 // ------------------------- SAVE / LOAD ------------------------------
 
+let _saveFailed = false;
 function save(){
   try{
     normalizeGame(G);
+    pruneChunks(G);
     // assign ids to survivors that lack them
     for (const s of G.survivors){ if (s.id===undefined) s.id = G.nextSurvId++; }
-    localStorage.setItem(SAVE_KEY, JSON.stringify(G));
-  }catch(e){ console.warn("Save failed", e); }
+    // The live cache is disposable. Persist only seed, exploration and tile deltas.
+    const snapshot = Object.assign({}, G);
+    delete snapshot.chunks;
+    snapshot.chunkChanges = packChunkChanges(G.chunkChanges);
+    snapshot.exploredChunks = packExplored(G.explored);
+    delete snapshot.explored;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
+    _saveFailed = false;
+    return true;
+  }catch(e){
+    console.warn("Save failed", e);
+    if (!_saveFailed && G) pushLog(G,"Save failed. Browser storage may be full or unavailable; your latest progress has not been saved.","bad");
+    _saveFailed = true;
+    return false;
+  }
 }
 
 function load(){
@@ -23,11 +38,12 @@ function load(){
     }
     if (!raw) return false;
     const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid save data");
+    normalizeGame(parsed);
     G = parsed;
-    normalizeGame(G);
     if (migrated) save();
     return true;
-  }catch(e){ console.warn("Load failed", e); return false; }
+  }catch(e){ console.warn("Load failed", e); return null; }
 }
 
 function clearSaves(){
@@ -65,9 +81,14 @@ function normalizeGame(g){
   if (!Array.isArray(g.relationships)) g.relationships = [];
   if (!Array.isArray(g.followers)) g.followers = [];
   if (g.stepAccum==null) g.stepAccum = 0;
+  if (!Number.isFinite(g.seed)) g.seed = Math.floor(Math.random()*1e9);
   if (g.phaseMinutes==null) g.phaseMinutes = 0;
   g.phaseMinutes = clamp(g.phaseMinutes, 0, 359);
-  if (!g.explored) g.explored = {};
+  if (!g.explored || typeof g.explored!=="object" || Array.isArray(g.explored)) g.explored = {};
+  if (g.exploredChunks){
+    unpackExplored(g.exploredChunks,g.explored);
+    delete g.exploredChunks;
+  }
   normalizeTown(g);
   if (!g.nextSurvId || g.nextSurvId < 1) g.nextSurvId = 1;
   for (const s of g.survivors.concat(g.followers)) normalizeSurvivor(g, s);
@@ -98,14 +119,11 @@ function normalizeGame(g){
       g.jobs[s.id] = s.job = "none";
     } else ids.push(s.id);
   }
-  if (!g.map || !Array.isArray(g.map) || g.map.length!==MAP_H || !Array.isArray(g.map[0]) || g.map[0].length!==MAP_W){
-    generateMap(g);
-  } else {
-    normalizeMap(g);
-  }
-  g.playerX = clamp(g.playerX ?? g.villageX ?? 0, 0, MAP_W-1);
-  g.playerY = clamp(g.playerY ?? g.villageY ?? 0, 0, MAP_H-1);
-  if (!inBounds(g.villageX, g.villageY)) { g.villageX = g.playerX; g.villageY = g.playerY; }
+  if (!Number.isSafeInteger(g.villageX)) g.villageX = 0;
+  if (!Number.isSafeInteger(g.villageY)) g.villageY = 0;
+  if (!Number.isSafeInteger(g.playerX)) g.playerX = g.villageX;
+  if (!Number.isSafeInteger(g.playerY)) g.playerY = g.villageY;
+  normalizeWorld(g);
   normalizeExpedition(g);
   placeSage(g);
 }
@@ -118,10 +136,19 @@ function normalizeExpedition(g){
   if (!Array.isArray(g.townGear)) g.townGear = [];
   if (!g.equipment) g.equipment = {};
   if (!Number.isFinite(g.nextItemId)) g.nextItemId = 1;
-  for (const key of ["camps","caches","workSites","markers","orders","reserves","scoutCooldowns","undergroundCooldowns"]){
+  for (const key of ["camps","caches","workSites","markers","orders","reserves","scoutCooldowns","undergroundCooldowns","sourceStocks","traderOffers"]){
     if (!g[key] || typeof g[key]!=="object" || Array.isArray(g[key])) g[key] = {};
   }
   if (!Array.isArray(g.farms)) g.farms = [];
+  for(const [key,state] of Object.entries(g.sourceStocks)){
+    if(!state || typeof state.stock!=="object" || !state.stock || Array.isArray(state.stock)){ delete g.sourceStocks[key];continue; }
+    state.refillAt=Number.isFinite(state.refillAt)?Math.max(0,state.refillAt):0;
+    for(const k of Object.keys(state.stock)) if(!RESOURCES[k] || !Number.isFinite(state.stock[k]) || state.stock[k]<0) delete state.stock[k];
+  }
+  for(const site of Object.values(g.workSites)) if(site && site.kind!=="outpost") delete site.remaining;
+  for(const [key,offer] of Object.entries(g.traderOffers)){
+    if(!offer || ![offer.give,offer.get].every(values=>values && typeof values==="object" && Object.entries(values).length && Object.entries(values).every(([k,v])=>RESOURCES[k] && Number.isFinite(v) && v>0))) delete g.traderOffers[key];
+  }
   if (!g.weather || !["clear","rain","cold"].includes(g.weather.type)) g.weather = {type:"clear"};
   if (g.stopAtNight==null) g.stopAtNight = true;
   for (const k of RES_KEYS){
@@ -166,12 +193,13 @@ function normalizeExpedition(g){
   }
   g.farms = g.farms.filter(f=>["garden","crop_field","greenhouse"].includes(f.building));
   // Bind each plot record to the world tile of its building, for proximity gating.
-  if (g.map){
+  if (g.chunks){
     for (const id of ["garden","crop_field","greenhouse"]){
+      if (!g.farms.some(f=>f.building===id)) continue;
       const tiles=[];
-      for (let y=Math.max(0,g.villageY-7); y<=Math.min(MAP_H-1,g.villageY+7); y++)
-        for (let x=Math.max(0,g.villageX-10); x<=Math.min(MAP_W-1,g.villageX+10); x++)
-          if (g.map[y] && g.map[y][x] && g.map[y][x].settlementBuilding===id) tiles.push({x,y});
+      for (let y=g.villageY-7; y<=g.villageY+7; y++)
+        for (let x=g.villageX-10; x<=g.villageX+10; x++)
+          if (tileAt(g, x, y).settlementBuilding===id) tiles.push({x,y});
       tiles.sort((a,b)=>a.y-b.y || a.x-b.x);
       g.farms.filter(f=>f.building===id).forEach((f,i)=>{
         if (tiles[i]){ f.x=tiles[i].x; f.y=tiles[i].y; } else { f.x=null; f.y=null; }
@@ -193,7 +221,7 @@ function normalizeExpedition(g){
       const weapon = giveItem(g,"salvaged_weapon"); g.equipment.weapon = weapon.id;
     }
     g.reserves.wood = 5;
-    pushLog(g,"Expedition supplies are now carried in your pack. Town stock stays at home; transfers are available inside the settlement.","info");
+    pushLog(g,"Expedition supplies are carried in your pack. Base stock stays at home; transfer supplies beside the campfire or a storage building.","info");
   }
 }
 
@@ -238,22 +266,171 @@ function normalizeSurvivor(g, s){
   if (!JOBS[s.job]) s.job = "none";
 }
 
-function normalizeMap(g){
-  for (let y=0; y<MAP_H; y++){
-    if (!Array.isArray(g.map[y])) g.map[y] = [];
-    for (let x=0; x<MAP_W; x++){
-      const t = g.map[y][x] || {};
-      if (!BIOMES[t.biome]) t.biome = "plains";
-      if (t.feature && !MAP_FEATURES[t.feature.type]) t.feature = null;
-      if (t.feature && t.feature.charges==null) t.feature.charges = MAP_FEATURES[t.feature.type].charges;
-      if (t.entity && !MAP_ENTITIES[t.entity.type]) t.entity = null;
-      if (t.settlementBuilding && !BUILDINGS[t.settlementBuilding]) t.settlementBuilding = null;
-      // Keep tile identity: open dialogs and combat callbacks can still reference it.
-      t.feature=t.feature || null; t.entity=t.entity || null; t.settlementBuilding=t.settlementBuilding || null;
-      g.map[y][x] = t;
+function normalizeWorldTile(t){
+  if (!t || typeof t !== "object" || Array.isArray(t)) t = {};
+  if (!BIOMES[t.biome]) t.biome = "plains";
+  if (t.feature && !MAP_FEATURES[t.feature.type]) t.feature = null;
+  if (t.feature && !Number.isFinite(t.feature.charges)) t.feature.charges = MAP_FEATURES[t.feature.type].charges;
+  if (t.entity && !MAP_ENTITIES[t.entity.type]) t.entity = null;
+  if (t.settlementBuilding && !BUILDINGS[t.settlementBuilding]) t.settlementBuilding = null;
+  t.feature=t.feature || null; t.entity=t.entity || null; t.settlementBuilding=t.settlementBuilding || null;
+  return t;
+}
+
+function validChunkKey(key){
+  const xy = key.split(",").map(Number);
+  return xy.length===2 && xy.every(Number.isSafeInteger) && chunkKey(...xy)===key
+    && inBounds(xy[0]*CHUNK,xy[1]*CHUNK) && inBounds(xy[0]*CHUNK+CHUNK-1,xy[1]*CHUNK+CHUNK-1);
+}
+
+// Many changed tiles (especially migrated fixed maps) have identical state.
+// A small per-chunk palette avoids repeating the same tile object hundreds of
+// times and leaves room for the original legacy save during migration.
+const _packedChanges = new WeakMap();
+function packChunkChanges(chunks){
+  const packed = {};
+  for (const [key,changes] of Object.entries(chunks)){
+    let record = _packedChanges.get(changes);
+    if (!record){
+      record = {tiles:[],cells:{}};
+      const lookup = new Map();
+      for (const [index,tile] of Object.entries(changes)){
+        const text=JSON.stringify(tile);
+        if (!lookup.has(text)){
+          lookup.set(text,record.tiles.length);
+          record.tiles.push(tile);
+        }
+        record.cells[index]=lookup.get(text);
+      }
+      _packedChanges.set(changes,record);
+    }
+    packed[key]=record;
+  }
+  return packed;
+}
+
+// Four explored tiles per hex digit: a fully explored 20x20 chunk takes 100
+// characters rather than 400 repeated world-coordinate keys. Runtime lookups
+// still use the existing explored dictionary.
+function packExplored(explored){
+  const masks = {};
+  for (const key of Object.keys(explored)){
+    if (!explored[key]) continue;
+    const xy=key.split(",").map(Number);
+    if (xy.length!==2 || !inBounds(...xy)) continue;
+    const [x,y]=xy, cx=Math.floor(x/CHUNK), cy=Math.floor(y/CHUNK);
+    const ck=chunkKey(cx,cy), index=(y-cy*CHUNK)*CHUNK+x-cx*CHUNK;
+    const mask=masks[ck] || (masks[ck]=new Uint8Array(Math.ceil(CHUNK*CHUNK/4)));
+    mask[Math.floor(index/4)] |= 1<<(index%4);
+  }
+  const packed={};
+  for (const [key,mask] of Object.entries(masks)) packed[key]=Array.from(mask,n=>n.toString(16)).join("");
+  return packed;
+}
+
+function unpackExplored(packed,explored){
+  for (const [key,mask] of Object.entries(packed)){
+    if (!validChunkKey(key) || typeof mask!=="string" || mask.length!==Math.ceil(CHUNK*CHUNK/4) || !/^[0-9a-f]+$/.test(mask)) continue;
+    const [cx,cy]=key.split(",").map(Number);
+    for (let i=0; i<CHUNK*CHUNK; i++){
+      if (parseInt(mask[Math.floor(i/4)],16) & (1<<(i%4)))
+        explored[(cx*CHUNK+i%CHUNK)+","+(cy*CHUNK+Math.floor(i/CHUNK))]=true;
     }
   }
-  if (inBounds(g.villageX, g.villageY)) g.map[g.villageY][g.villageX].settlementBuilding = "campfire";
+}
+
+const _normalizedWorlds = new WeakSet();
+function normalizeWorld(g){
+  if (_normalizedWorlds.has(g)) return;
+  if (g.worldVersion!=null && g.worldVersion!==WORLD_VERSION) throw new Error("Unsupported world generator version");
+  if (g.chunkSize!=null && g.chunkSize!==CHUNK) throw new Error("Unsupported world chunk size");
+  const hadWorld = Array.isArray(g.map) || g.chunks || g.chunkChanges || g.worldVersion!=null;
+  g.worldVersion = WORLD_VERSION;
+  g.chunkSize = CHUNK;
+  if (!g.chunkChanges || typeof g.chunkChanges!=="object" || Array.isArray(g.chunkChanges)) g.chunkChanges = {};
+  for (const [key,changes] of Object.entries(g.chunkChanges)){
+    if (!validChunkKey(key) || !changes || typeof changes!=="object" || Array.isArray(changes)){
+      delete g.chunkChanges[key]; continue;
+    }
+    // Earlier delta saves stored full tile objects directly; accept both forms.
+    let tiles=changes;
+    if (Array.isArray(changes.tiles) && changes.cells && typeof changes.cells==="object"){
+      tiles={};
+      for (const [index,id] of Object.entries(changes.cells)){
+        if (Number.isInteger(id) && id>=0 && id<changes.tiles.length)
+          tiles[index]=JSON.parse(JSON.stringify(changes.tiles[id]));
+      }
+      g.chunkChanges[key]=tiles;
+    }
+    for (const [index,tile] of Object.entries(tiles)){
+      const i=Number(index);
+      if (!Number.isInteger(i) || i<0 || i>=CHUNK*CHUNK || String(i)!==index){ delete tiles[index]; continue; }
+      tiles[index] = normalizeWorldTile(tile);
+    }
+  }
+  if (!g.chunks || typeof g.chunks!=="object" || Array.isArray(g.chunks)) g.chunks = {};
+  // Accept saves made by the earlier full-chunk implementation as well.
+  for (const key of Object.keys(g.chunks)){
+    const c=g.chunks[key];
+    if (!validChunkKey(key) || !Array.isArray(c)){ delete g.chunks[key]; continue; }
+    const [cx,cy]=key.split(",").map(Number);
+    let reference;
+    for (let y=0; y<CHUNK; y++){
+      if (!Array.isArray(c[y])) c[y]=[];
+      for (let x=0; x<CHUNK; x++){
+        if (!c[y][x]){
+          reference = reference || generateChunk(g,cx,cy);
+          c[y][x] = reference[y][x];
+        }
+        c[y][x]=normalizeWorldTile(c[y][x]);
+      }
+      c[y].length=CHUNK;
+    }
+    c.length=CHUNK;
+  }
+  // Preserve every old fixed-map tile, including unrevealed terrain, depletion,
+  // buildings and NPCs. Coordinates of camps, farms and markers stay unchanged.
+  if (Array.isArray(g.map)){
+    for (let y=0; y<g.map.length; y++){
+      if (!Array.isArray(g.map[y])) continue;
+      for (let x=0; x<g.map[y].length; x++){
+        if (!g.map[y][x]) continue;
+        const c=getChunk(g,Math.floor(x/CHUNK),Math.floor(y/CHUNK));
+        c[y%CHUNK][x%CHUNK]=normalizeWorldTile(g.map[y][x]);
+      }
+    }
+    delete g.map;
+  }
+  if (!hadWorld) generateMap(g);
+  tileAt(g,g.villageX,g.villageY).settlementBuilding = "campfire";
+  pruneChunks(g);
+  _normalizedWorlds.add(g);
+}
+
+// Compare only the bounded live cache, using a baseline generated once per load.
+// Entire tile state is compared so future entity/feature fields are preserved too.
+function captureChunkChanges(g,key){
+  const c=g.chunks[key];
+  if (!_chunkBaselines.has(c)){
+    const [cx,cy]=key.split(",").map(Number);
+    const ref=generateChunk(g,cx,cy);
+    _chunkBaselines.set(c,ref.map(row=>row.map(t=>JSON.stringify(t))));
+  }
+  const baseline=_chunkBaselines.get(c), changes={};
+  for (let y=0; y<CHUNK; y++) for (let x=0; x<CHUNK; x++){
+    const text=JSON.stringify(c[y][x]);
+    if (text!==baseline[y][x]) changes[y*CHUNK+x]=JSON.parse(text);
+  }
+  if (Object.keys(changes).length) g.chunkChanges[key]=changes;
+  else delete g.chunkChanges[key];
+}
+
+function pruneChunks(g){
+  for (const key of Object.keys(g.chunks)){
+    captureChunkChanges(g,key);
+    const [cx,cy]=key.split(",").map(Number);
+    if (!chunkIsPinned(g,cx,cy)) delete g.chunks[key];
+  }
 }
 
 function reset(){

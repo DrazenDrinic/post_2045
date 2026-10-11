@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Post 2045 — SVG Field Collection</title>
+  <style>
+    :root { color-scheme: dark; --bg: #101619; --panel: #192226; --line: #303b3e; --text: #e3e4d7; --muted: #9aa8a7; --accent: #d5b363; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Consolas, "Courier New", monospace; }
+    a { color: inherit; }
+    .page { max-width: 1512px; margin: auto; padding: 32px 48px 28px; }
+    .masthead { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .brand { font-size: 20px; font-weight: bold; letter-spacing: -.8px; }
+    .brand span { color: var(--accent); }
+    .edition { color: var(--muted); font-size: 10px; letter-spacing: 2px; text-align: right; line-height: 1.7; }
+    .intro { display: flex; justify-content: space-between; align-items: end; gap: 32px; margin: 36px 0 30px; }
+    .eyebrow { color: var(--accent); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 14px; }
+    h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(32px, 3.4vw, 52px); font-weight: normal; line-height: 1.1; letter-spacing: -1.5px; }
+    .subtitle { color: var(--muted); font-size: 12px; line-height: 1.8; max-width: 560px; margin: 15px 0 0; }
+    .spec { font-size: 11px; color: var(--muted); line-height: 1.9; text-align: right; white-space: nowrap; }
+    .spec strong { color: var(--text); font-weight: normal; }
+    .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 17px; color: var(--muted); font-size: 10px; }
+    .controls label { padding: 7px 11px; border: 1px solid var(--line); cursor: pointer; transition: border-color .15s, color .15s; }
+    .controls label:hover { border-color: var(--accent); color: var(--text); }
+    .controls .hint { margin-left: auto; }
+    .theme-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    #dark:checked ~ .controls label[for="dark"], #light:checked ~ .controls label[for="light"] { border-color: var(--accent); color: var(--accent); background: #d5b3630d; }
+    #dark:focus-visible ~ .controls label[for="dark"], #light:focus-visible ~ .controls label[for="light"] { outline: 2px solid var(--text); outline-offset: 3px; }
+    .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .card { min-width: 0; border: 1px solid var(--line); background: #151d20; transition: border-color .18s; }
+    .card:hover { border-color: #77847c; }
+    .art { display: block; position: relative; aspect-ratio: 1.12; overflow: hidden; background-color: var(--panel); background-image: linear-gradient(#a3b5ae05 1px, transparent 1px), linear-gradient(90deg, #a3b5ae05 1px, transparent 1px); background-size: 24px 24px; }
+    .art::before, .art::after { content: ""; position: absolute; width: 9px; height: 9px; border-color: #566560; border-style: solid; pointer-events: none; }
+    .art::before { top: 13px; left: 13px; border-width: 1px 0 0 1px; }
+    .art::after { bottom: 13px; right: 13px; border-width: 0 1px 1px 0; }
+    .art img { width: 100%; height: 100%; padding: 13px 20px 6px; display: block; transition: transform .18s; }
+    .art:hover img { transform: translateY(-3px); }
+    .art:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+    .number { position: absolute; top: 12px; right: 13px; color: #82948e; font-size: 9px; letter-spacing: 1px; }
+    .caption { border-top: 1px solid var(--line); padding: 13px 14px 10px; }
+    .type { color: var(--accent); font-size: 8px; letter-spacing: 1.7px; text-transform: uppercase; margin: 0 0 7px; }
+    h2 { margin: 0; font-size: 12px; font-weight: normal; }
+    .sizes { display: flex; align-items: center; gap: 4px; height: 51px; margin-top: 8px; border-top: 1px solid #293336; }
+    .sizes img { object-fit: contain; }
+    .sizes span { margin-left: auto; color: #91a19f; font-size: 8px; letter-spacing: .6px; }
+    #light:checked ~ .grid .art { background-color: #d9d3bd; background-image: linear-gradient(#3a493a09 1px, transparent 1px), linear-gradient(90deg, #3a493a09 1px, transparent 1px); }
+    #light:checked ~ .grid .number { color: #66705d; }
+    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 25px; font-size: 9px; line-height: 1.8; color: var(--muted); letter-spacing: .6px; }
+    .swatches { display: inline-flex; gap: 5px; vertical-align: middle; margin-left: 10px; }
+    .swatches i { width: 12px; height: 12px; display: inline-block; border: 1px solid #ffffff20; }
+    @media (min-width: 1600px) { .page { padding-top: 42px; } .intro { margin-top: 44px; margin-bottom: 38px; } }
+    @media (max-width: 1100px) { .page { padding: 24px; } .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .spec { display: none; } }
+    @media (max-width: 620px) { .page { padding: 20px 14px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .edition { font-size: 8px; letter-spacing: 1px; } .intro { margin: 28px 0; } .controls .hint { width: 100%; margin-top: 6px; } .caption { padding: 11px 10px 8px; } h2 { font-size: 11px; } .sizes { gap: 0; } .sizes span { font-size: 7px; letter-spacing: 0; } .art img { padding: 14px 8px 4px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <div class="brand">POST <span>/ 2045</span></div>
+      <div class="edition">FIELD COLLECTION 001<br>SVG ART STUDIES</div>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Scavenge. Survive. Rebuild.</p>
+          <h1 id="page-title">Built from what remains.</h1>
+          <p class="subtitle">Ten hand-coded illustrations for life after the collapse.<br>Oxidized steel, faded canvas, reclaimed timber. A little warmth.</p>
+        </div>
+        <div class="spec"><strong>10 ORIGINAL ASSETS</strong><br>256 × 256 &nbsp; / &nbsp; VECTOR<br>TRANSPARENT &nbsp; / &nbsp; SELF-CONTAINED</div>
+      </section>
+      <input class="theme-input" type="radio" name="surface" id="dark" checked aria-label="Dark preview background">
+      <input class="theme-input" type="radio" name="surface" id="light" aria-label="Light preview background">
+      <div class="controls">
+        <span>PREVIEW SURFACE</span>
+        <label for="dark">01 / DARK</label>
+        <label for="light">02 / PARCHMENT</label>
+        <span class="hint">Select an illustration to open the original SVG &nearr;</span>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <a class="art" href="01-salvaged-timber.svg" aria-label="Open salvaged timber SVG"><span class="number">01</span><img src="01-salvaged-timber.svg" alt="Rope-bound timber with cut growth rings and a green shoot" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Wood</p><h2>Salvaged timber</h2><div class="sizes"><img src="01-salvaged-timber.svg" width="24" height="24" alt=""><img src="01-salvaged-timber.svg" width="32" height="32" alt=""><img src="01-salvaged-timber.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="02-metal-scrap.svg" aria-label="Open metal scrap SVG"><span class="number">02</span><img src="02-metal-scrap.svg" alt="Rusty gear, bent sheet metal, copper wire, and a bolt" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Metal</p><h2>Metal scrap</h2><div class="sizes"><img src="02-metal-scrap.svg" width="24" height="24" alt=""><img src="02-metal-scrap.svg" width="32" height="32" alt=""><img src="02-metal-scrap.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="03-clean-water.svg" aria-label="Open clean water SVG"><span class="number">03</span><img src="03-clean-water.svg" alt="Blue canteen with canvas strap and water-drop badge" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Water</p><h2>Clean water</h2><div class="sizes"><img src="03-clean-water.svg" width="24" height="24" alt=""><img src="03-clean-water.svg" width="32" height="32" alt=""><img src="03-clean-water.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="04-emergency-rations.svg" aria-label="Open emergency rations SVG"><span class="number">04</span><img src="04-emergency-rations.svg" alt="Pull-tab food tin with wheat emblem and an olive ration pouch" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Food</p><h2>Emergency rations</h2><div class="sizes"><img src="04-emergency-rations.svg" width="24" height="24" alt=""><img src="04-emergency-rations.svg" width="32" height="32" alt=""><img src="04-emergency-rations.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="05-field-medicine.svg" aria-label="Open field medicine SVG"><span class="number">05</span><img src="05-field-medicine.svg" alt="Weathered medical case and a roll of cream bandages" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Medicine</p><h2>Field medicine</h2><div class="sizes"><img src="05-field-medicine.svg" width="24" height="24" alt=""><img src="05-field-medicine.svg" width="32" height="32" alt=""><img src="05-field-medicine.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="06-salvaged-battery.svg" aria-label="Open salvaged battery SVG"><span class="number">06</span><img src="06-salvaged-battery.svg" alt="Olive power cell with exposed terminals and a lightning warning" width="256" height="256"></a>
+          <div class="caption"><p class="type">Resource / Energy</p><h2>Salvaged battery</h2><div class="sizes"><img src="06-salvaged-battery.svg" width="24" height="24" alt=""><img src="06-salvaged-battery.svg" width="32" height="32" alt=""><img src="06-salvaged-battery.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="07-survivor-shelter.svg" aria-label="Open survivor shelter SVG"><span class="number">07</span><img src="07-survivor-shelter.svg" alt="Patchwork timber shelter with a teal roof and warm doorway" width="256" height="256"></a>
+          <div class="caption"><p class="type">Settlement / Housing</p><h2>Survivor shelter</h2><div class="sizes"><img src="07-survivor-shelter.svg" width="24" height="24" alt=""><img src="07-survivor-shelter.svg" width="32" height="32" alt=""><img src="07-survivor-shelter.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="08-lookout-tower.svg" aria-label="Open lookout tower SVG"><span class="number">08</span><img src="08-lookout-tower.svg" alt="Timber watchtower with crossed supports and a torn amber flag" width="256" height="256"></a>
+          <div class="caption"><p class="type">Settlement / Defense</p><h2>Lookout tower</h2><div class="sizes"><img src="08-lookout-tower.svg" width="24" height="24" alt=""><img src="08-lookout-tower.svg" width="32" height="32" alt=""><img src="08-lookout-tower.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="09-campfire.svg" aria-label="Open campfire SVG"><span class="number">09</span><img src="09-campfire.svg" alt="Amber campfire over crossed logs inside a ring of stones" width="256" height="256"></a>
+          <div class="caption"><p class="type">Settlement / Warmth</p><h2>Campfire</h2><div class="sizes"><img src="09-campfire.svg" width="24" height="24" alt=""><img src="09-campfire.svg" width="32" height="32" alt=""><img src="09-campfire.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+        <article class="card">
+          <a class="art" href="10-overgrown-ruins.svg" aria-label="Open overgrown ruins SVG"><span class="number">10</span><img src="10-overgrown-ruins.svg" alt="Abandoned house with exposed rafters, crumbling brick, and ivy" width="256" height="256"></a>
+          <div class="caption"><p class="type">Exploration / Landmark</p><h2>Overgrown ruins</h2><div class="sizes"><img src="10-overgrown-ruins.svg" width="24" height="24" alt=""><img src="10-overgrown-ruins.svg" width="32" height="32" alt=""><img src="10-overgrown-ruins.svg" width="48" height="48" alt=""><span>24 / 32 / 48</span></div></div>
+        </article>
+      </div>
+    </main>
+    <footer>
+      <span>PALETTE / ASH · RUST · CANVAS · SAGE · WATER<span class="swatches" aria-hidden="true"><i style="background:#242c2e"></i><i style="background:#a96c49"></i><i style="background:#d5b363"></i><i style="background:#86a169"></i><i style="background:#528a9b"></i></span></span>
+      <span>PURE SVG / NO FONTS, SCRIPTS, OR EXTERNAL ASSETS</span>
+    </footer>
+  </div>
+</body>
+</html>

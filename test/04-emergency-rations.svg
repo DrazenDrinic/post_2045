@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="rations-title rations-desc">
+  <title id="rations-title">Emergency rations</title>
+  <desc id="rations-desc">A battered pull-tab food tin with a wheat label, backed by a folded olive ration pouch.</desc>
+  <defs>
+    <linearGradient id="rations-pouch" x1="70" y1="53" x2="146" y2="185" gradientUnits="userSpaceOnUse"><stop stop-color="#99a177"/><stop offset="1" stop-color="#515e48"/></linearGradient>
+    <linearGradient id="rations-tin" x1="105" y1="139" x2="204" y2="186" gradientUnits="userSpaceOnUse"><stop stop-color="#be8a4e"/><stop offset=".45" stop-color="#e2bb71"/><stop offset="1" stop-color="#9f663e"/></linearGradient>
+  </defs>
+  <ellipse cx="131" cy="219" rx="92" ry="14" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="m62 45 94 8-5 22 9 19-9 104-25 10-79-17 7-103-5-24Z" fill="url(#rations-pouch)"/>
+    <path d="m62 45 94 8-5 17-95-9Z" fill="#a6b08a"/>
+    <path d="m64 52 81 8m-88 121 59 13m-59-115 8 25-6 59m83-79-13 20" stroke="#ccd0a2" stroke-width="3"/>
+    <path d="m73 87 62 6-5 60-62-8Z" fill="#d6cc9d" stroke-width="3"/>
+    <path d="m87 101 29 3m-31 31 28 3" stroke="#667052" stroke-width="3"/>
+    <path d="m95 112 10 1-1 5 5 1-1 9-5-1-1 5-9-1 1-5-5-1 1-9 5 1Z" fill="#67714e" stroke="none"/>
+    <path d="m47 172 9 7 7-3m68-94 10-9m-68 92 17 2" stroke="#424c3b" stroke-width="3"/>
+    <path d="M98 132h117v65c0 15-26 26-58 26s-59-11-59-26Z" fill="url(#rations-tin)"/>
+    <path d="M98 151c26 16 85 17 117 0v18c-29 16-87 16-117 0Z" fill="#c46943" stroke="none"/>
+    <path d="M105 145v52m7-48v49" stroke="#f0d393" stroke-width="3" opacity=".65"/>
+    <path d="M98 191c29 19 88 19 117 0v9c-6 13-30 23-58 23s-53-10-59-23Z" fill="#6f807e"/>
+    <path d="M103 205c27 16 78 16 105 0" stroke="#bfcbc0" stroke-width="3"/>
+    <ellipse cx="156.5" cy="132" rx="58.5" ry="24" fill="#97aaa5"/>
+    <ellipse cx="156.5" cy="132" rx="47" ry="16" fill="#657c7e" stroke-width="2"/>
+    <path d="M115 132c7-12 55-17 78-4" stroke="#cdd5bf" stroke-width="3"/>
+    <path d="M145 127c-3-8 4-13 15-13s18 5 15 11c-2 5-10 9-19 9-5 0-9-3-11-7Z" fill="#c2cbb7" stroke-width="3"/>
+    <ellipse cx="160" cy="122" rx="7" ry="3" fill="#4a6267" stroke="none"/>
+    <path d="m155 134 5 5" stroke="#c2cbb7" stroke-width="5"/>
+    <path d="M146 159h23l6 9-6 24h-23l-7-24Z" fill="#eee0ae" stroke-width="3"/>
+    <path d="M157 183v-18m0 8-7-5m7 11-7-5m7-1 7-5m-7 11 7-5" stroke="#79734b" stroke-width="2.5"/>
+    <path d="m184 177 17-5m-17 13 11-3m-75-17 7 2" stroke="#775332" stroke-width="3"/>
+    <path d="m200 149 8-2m-10 45 10-5" stroke="#ecce91" stroke-width="3"/>
+  </g>
+</svg>

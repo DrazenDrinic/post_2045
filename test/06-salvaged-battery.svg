@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="battery-title battery-desc">
+  <title id="battery-title">Salvaged battery</title>
+  <desc id="battery-desc">A heavy olive power cell with exposed terminals, a taped cable, and an amber lightning warning.</desc>
+  <defs>
+    <linearGradient id="battery-body" x1="65" y1="106" x2="170" y2="210" gradientUnits="userSpaceOnUse"><stop stop-color="#85917a"/><stop offset="1" stop-color="#46574f"/></linearGradient>
+    <linearGradient id="battery-metal" x1="66" y1="64" x2="178" y2="109" gradientUnits="userSpaceOnUse"><stop stop-color="#aebbb1"/><stop offset="1" stop-color="#566d70"/></linearGradient>
+  </defs>
+  <ellipse cx="128" cy="220" rx="86" ry="14" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M167 76c49-32 70 4 45 30-12 13-11 33-3 44" stroke="#242c2e" stroke-width="12"/>
+    <path d="M167 76c49-32 70 4 45 30-12 13-11 33-3 44" stroke="#ba7356" stroke-width="6"/>
+    <path d="m211 134-10 4 4 16 11-3Z" fill="#b7af91" stroke-width="3"/>
+    <path d="m211 153 4 10m-9-9 2 8" stroke="#cfa76a" stroke-width="3"/>
+    <path d="M88 76C37 54 23 96 50 118" stroke="#242c2e" stroke-width="12"/>
+    <path d="M88 76C37 54 23 96 50 118" stroke="#617c85" stroke-width="6"/>
+    <path d="m54 100 103-27 40 27v99l-36 21-107-27Z" fill="url(#battery-body)"/>
+    <path d="m161 124 36-24v99l-36 21Z" fill="#354944"/>
+    <path d="m54 100 103-27 40 27-36 24Z" fill="url(#battery-metal)"/>
+    <path d="m50 91 106-26 46 29v17l-41 24L50 108Z" fill="#41545a"/>
+    <path d="m50 91 106-26 46 29-41 24Z" fill="url(#battery-metal)"/>
+    <path d="m60 94 100 24 30-18" stroke="#c7cbb4" stroke-width="3"/>
+    <path d="m75 79 21-5v17l-21 5Z" fill="#bf795d"/>
+    <path d="m75 79 10-6 21-5-10 6Zm21-5 10-6v17l-10 6Z" fill="#8e5346"/>
+    <path d="m81 63 14-3v15l-14 3Z" fill="#c0c6ac" stroke-width="3"/>
+    <path d="m143 62 21-5 12 9-21 5Z" fill="#748b8c"/>
+    <path d="m143 62 12 9v17l-12-10Zm12 9 21-5v16l-21 6Z" fill="#405b68"/>
+    <path d="m150 49 13-3v16l-13 3Z" fill="#c0c6ac" stroke-width="3"/>
+    <path d="m71 128 13 3m-7-8v13m92-3 11-6" stroke="#e0d3a1" stroke-width="3"/>
+    <path d="m100 137 45 12v47l-45-12Z" fill="#d5b363" stroke-width="3"/>
+    <path d="m123 146-15 19 12 3-4 17 20-23-13-3 7-11Z" fill="#35474a" stroke-width="2"/>
+    <path d="m64 149 16 4m-16 6 16 4m-16 6 16 4m-16 6 16 4" stroke="#32443e" stroke-width="4"/>
+    <path d="m65 197 86 22 10-6v-11l-97-25Z" fill="#384b46"/>
+    <path d="m70 191 75 20m28-46 12-7m-12 20 12-7m-12 20 12-7" stroke="#7d9180" stroke-width="3"/>
+    <path d="m93 103 23 6 9 28-21-5Z" fill="#3a4544" stroke-width="3"/>
+    <path d="m101 108 6 18m2-16 6 18" stroke="#69746a" stroke-width="2"/>
+    <path d="m143 191 6 2m-52 8 12 3" stroke="#d4c68e" stroke-width="3"/>
+  </g>
+</svg>

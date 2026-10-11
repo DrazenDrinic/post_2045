@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="fire-title fire-desc">
+  <title id="fire-title">Campfire</title>
+  <desc id="fire-desc">A bright amber campfire over charred crossed logs in a ring of angular stones, with floating embers.</desc>
+  <defs>
+    <radialGradient id="fire-glow"><stop stop-color="#eda24f" stop-opacity=".3"/><stop offset="1" stop-color="#eda24f" stop-opacity="0"/></radialGradient>
+    <linearGradient id="fire-flame" x1="128" y1="60" x2="128" y2="186" gradientUnits="userSpaceOnUse"><stop stop-color="#f5ca6d"/><stop offset=".5" stop-color="#df8b42"/><stop offset="1" stop-color="#b54f36"/></linearGradient>
+    <linearGradient id="fire-stone" x1="99" y1="173" x2="112" y2="223" gradientUnits="userSpaceOnUse"><stop stop-color="#a3a898"/><stop offset="1" stop-color="#56686a"/></linearGradient>
+  </defs>
+  <circle cx="129" cy="137" r="107" fill="url(#fire-glow)"/>
+  <ellipse cx="128" cy="219" rx="96" ry="15" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m48 179 8-17 22-5 15 12-7 22-27 4Zm48-11 3-20 20-6 19 10-2 24Zm57-9 13-14 23 7 8 17-19 13Z" fill="#697774"/>
+    <ellipse cx="128" cy="192" rx="76" ry="28" fill="#443b32"/>
+    <path d="m75 203 78-49 19 17-74 49Z" fill="#78533b"/>
+    <path d="m65 175 20-14 93 40-18 22Z" fill="#855c3e"/>
+    <path d="m85 169 75 35m-64-29 40 18m-36 7 27-19m12-12 13-8" stroke="#d28b4c" stroke-width="3"/>
+    <path d="m90 174 12 16 22-2 12 18m-34 2 3-13 15-5m26 9 7 14" stroke="#3c332e" stroke-width="4"/>
+    <path d="m159 202 18-1 5 12-13 12-10-2-6-11Z" fill="#cf9457"/>
+    <path d="m164 210 9-1-5 8" stroke="#77503a" stroke-width="3"/>
+    <path d="M104 183c-35-9-43-34-27-63 2 18 8 20 15 23-1-41 37-58 31-97 26 18 32 44 24 67 12-6 15-18 14-29 39 43 47 83 13 101-19 10-50 8-70-2Z" fill="url(#fire-flame)"/>
+    <path d="M110 181c-19-10-23-27-10-46 1 12 7 17 12 18-4-25 20-36 19-59 23 27 3 44 16 58 7-2 12-10 12-17 19 23 12 42-5 49-15 5-32 4-44-3Z" fill="#f6c96b" stroke="none"/>
+    <path d="M119 185c-13-14 7-24 10-41 3 14 21 23 14 39-7 5-17 5-24 2Z" fill="#fff0b4" stroke="none"/>
+    <path d="M79 157c1 9 5 14 12 18m73-60c9 13 14 25 13 36" stroke="#f3b45c" stroke-width="3"/>
+    <path d="m38 191 15-14 22 5 6 20-17 13-23-8Z" fill="url(#fire-stone)"/>
+    <path d="m38 191 24 6 13-15m-13 15 2 18" stroke="#c0bba0" stroke-width="2"/>
+    <path d="m75 210 9-16 25-1 12 18-8 16-26 1Z" fill="url(#fire-stone)"/>
+    <path d="m84 199 20-1 9 12-27 3" stroke="#cac4a5" stroke-width="2"/>
+    <path d="m129 216 8-19 28-2 15 17-12 18-28 1Z" fill="url(#fire-stone)"/>
+    <path d="m138 202 23-2 10 11-29 5" stroke="#cac4a5" stroke-width="2"/>
+    <path d="m179 194 6-20 22-1 16 18-7 18-23 4Z" fill="url(#fire-stone)"/>
+    <path d="m190 180 13-1 11 12-24 4m24-4 2 18" stroke="#cac4a5" stroke-width="2"/>
+    <path d="M83 94c-7-10 1-17 5-24 7 12 4 19-5 24Zm87-45c-6-9-1-17 4-23 5 11 3 18-4 23Z" fill="#e6a54f" stroke="none"/>
+    <path d="m104 34 2 6m49 22-2 7m42 32 2 5m-146 35 3 4" stroke="#e9b967" stroke-width="4"/>
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="timber-title timber-desc">
+  <title id="timber-title">Salvaged timber</title>
+  <desc id="timber-desc">Three rough-cut logs bundled with worn rope, with exposed growth rings and a tiny green shoot.</desc>
+  <defs>
+    <linearGradient id="timber-bark" x1="77" y1="65" x2="166" y2="198" gradientUnits="userSpaceOnUse"><stop stop-color="#967048"/><stop offset="1" stop-color="#49372e"/></linearGradient>
+    <linearGradient id="timber-end" x1="50" y1="120" x2="114" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#e6bf7b"/><stop offset="1" stop-color="#aa7549"/></linearGradient>
+    <linearGradient id="timber-rope" x1="112" y1="94" x2="162" y2="185" gradientUnits="userSpaceOnUse"><stop stop-color="#e7ce97"/><stop offset="1" stop-color="#9d8051"/></linearGradient>
+  </defs>
+  <ellipse cx="128" cy="217" rx="94" ry="15" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M49 143 142 86Q164 80 177 105L193 144 103 201Z" fill="url(#timber-bark)"/>
+    <path d="m111 169 75-51q23-8 35 12 17 28-6 45l-82 39Z" fill="url(#timber-bark)"/>
+    <path d="m48 145 33-38 86-49q21-10 35 12t-6 35l-93 56Z" fill="url(#timber-bark)"/>
+    <path d="m92 104 87-47 14 7-90 54Z" fill="#ba8c54" stroke="none"/>
+    <path d="m123 148 69-40m-37 62 46-28m-92-50 47-26m-52 96 40-24" stroke="#332e29" stroke-width="3"/>
+    <path d="m169 112 8-9 14 1m-44 55 10-13 17 1m-45-37 10-10" stroke="#c0955b" stroke-width="3"/>
+    <path d="M91 107c-16-7-33 5-35 24-3 24 11 42 30 39 19-2 28-22 20-42-3-9-7-17-15-21Z" fill="url(#timber-end)"/>
+    <path d="M77 119c-15 9-13 34 3 39 14 5 21-11 15-24-4-10-13-12-17-3-5 10 2 17 8 14" stroke="#815434" stroke-width="3"/>
+    <path d="m60 117 9 10m32 28-10-4" stroke="#614331" stroke-width="3"/>
+    <path d="M63 146c-19-8-34 6-33 28 1 24 16 42 35 40 22-2 33-27 22-47-6-12-13-17-24-21Z" fill="url(#timber-end)"/>
+    <path d="M53 160c-15 3-14 30 0 39 14 8 25-4 21-19-3-14-17-17-20-6-2 7 1 13 7 13" stroke="#815434" stroke-width="3"/>
+    <path d="m35 158 12 10m24 38-6-13" stroke="#614331" stroke-width="3"/>
+    <path d="M118 160c-21-5-35 11-31 31 4 21 18 32 35 27 17-5 27-23 18-39-5-10-12-16-22-19Z" fill="url(#timber-end)"/>
+    <path d="M113 173c-13-3-20 11-13 23 7 12 23 8 25-3 2-10-9-16-13-9l1 7" stroke="#815434" stroke-width="3"/>
+    <path d="m135 175-11 4m-28 32 10-9" stroke="#614331" stroke-width="3"/>
+    <path d="m121 86 11-6c24 24 28 51 25 74l18 30-13 8-20-34c5-28-2-50-21-72Z" fill="url(#timber-rope)"/>
+    <path d="m126 92 12-2m-6 13 12-2m-7 14 13-3m-10 16 13-2m-10 15 11-1m-8 15 10-3m-3 16 10-5m-4 16 10-6" stroke="#80663f" stroke-width="2"/>
+    <path d="M154 158c-26-13-32 9-12 13l21-9c17-20 28-7 13 3l-14 1" stroke="#242c2e" stroke-width="9"/>
+    <path d="M154 158c-26-13-32 9-12 13l21-9c17-20 28-7 13 3l-14 1" stroke="#cfb77f" stroke-width="5"/>
+    <path d="m161 169 10 28m-10-28-11 24" stroke="#cfb77f" stroke-width="5"/>
+    <path d="m180 67 5-23" stroke="#719163" stroke-width="3"/>
+    <path d="M184 54c-15 2-22-6-22-16 14-2 23 3 22 16Z" fill="#88a969"/>
+    <path d="M185 47c-2-13 5-22 17-23 2 13-4 22-17 23Z" fill="#b1c47a"/>
+  </g>
+</svg>

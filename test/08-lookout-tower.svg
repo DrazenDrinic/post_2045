@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="tower-title tower-desc">
+  <title id="tower-title">Lookout tower</title>
+  <desc id="tower-desc">A tall timber watchtower with crossed supports, a ladder, a corrugated roof, and a wind-torn amber flag.</desc>
+  <defs>
+    <linearGradient id="tower-wood" x1="66" y1="110" x2="165" y2="217" gradientUnits="userSpaceOnUse"><stop stop-color="#c29b66"/><stop offset="1" stop-color="#776043"/></linearGradient>
+    <linearGradient id="tower-roof" x1="81" y1="39" x2="162" y2="95" gradientUnits="userSpaceOnUse"><stop stop-color="#89a5a0"/><stop offset="1" stop-color="#476e75"/></linearGradient>
+  </defs>
+  <ellipse cx="128" cy="223" rx="88" ry="13" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m44 211 86-28 82 27-81 24Z" fill="#575f4d"/>
+    <path d="m109 111-5 92 10 3 8-95m57-8 13 109-12 3-12-108" fill="#705a41"/>
+    <path d="m77 112-21 105 13 4 21-105m60 6 12 100 13-4-13-103" fill="url(#tower-wood)"/>
+    <path d="m83 146 84 57-5 10-84-57Zm69-7 7 10-87 58-7-9Z" fill="#ab8658" stroke-width="3"/>
+    <path d="m167 155 11-4-9 57-8-7Z" fill="#a5885e" stroke-width="3"/>
+    <path d="m67 186 97 19m-95-30 92 18" stroke="#514735" stroke-width="3"/>
+    <path d="m64 101 79-23 50 28-47 26-82-17Z" fill="#d0b07d"/>
+    <path d="m64 101 82 18 47-25v15l-47 27-82-20Z" fill="#8f7452"/>
+    <path d="M71 104V65m72 54V79m42 20V65m-79 16V53" stroke="#b49669" stroke-width="8"/>
+    <path d="m71 104 71 16V92L71 77Zm72-12 42-22v28l-42 22Z" fill="#6f7b63" stroke-width="3"/>
+    <path d="m81 84 1 17m14-13v17m16-13v17m15-13v16m28-20v16m15-25v17" stroke="#a6ab7b" stroke-width="3"/>
+    <path d="m79 109 61 14m12-3 28-15" stroke="#d0b07d" stroke-width="3"/>
+    <path d="m54 67 69-38 76 34-57 26Z" fill="url(#tower-roof)"/>
+    <path d="m54 67 88 22 57-26v9l-57 28-88-25Z" fill="#3a565e"/>
+    <path d="m67 66 57-29 62 28" stroke="#c1c5a7" stroke-width="3"/>
+    <path d="m86 68 49-26m-29 32 49-24m-29 29 48-22" stroke="#3d646b" stroke-width="4"/>
+    <path d="m123 31 1-19" stroke="#ccb07e" stroke-width="4"/>
+    <path d="M126 13c14-9 23 9 43 2l-8 11 6 7c-17 7-24-11-41-4Z" fill="#d7ab55" stroke-width="3"/>
+    <path d="m94 127-13 99m31-94-13 97" stroke="#242c2e" stroke-width="9"/>
+    <path d="m94 127-13 99m31-94-13 97" stroke="#c2a371" stroke-width="5"/>
+    <path d="m93 141 17 4m-19 11 17 4m-19 11 17 4m-19 11 17 4m-19 11 17 4m-19 11 17 4" stroke="#d7b886" stroke-width="5"/>
+    <path d="m136 94 12 3v16l-12-3Z" fill="#ecc371" stroke-width="3"/>
+    <path d="M142 94v-6" stroke="#cfb47c" stroke-width="3"/>
+    <path d="m182 222 8-13 1 11 10-8m-160 9 7-11 2 10" stroke="#9aaa6d" stroke-width="3"/>
+    <path d="m126 220 9-5 13 5-9 5Z" fill="#969480" stroke-width="3"/>
+  </g>
+</svg>

@@ -4,7 +4,7 @@
 Everything that costs you ⏳ time, ⚡ energy, 📦 resources, or 🧠 knowledge — action by action,
 building by building, recipe by recipe.
 
-> **Last updated:** 2026-10-11
+> **Last updated:** 2026-10-11 (shared storage, carried pickups, water containers, finite reserves and recovery)
 >
 > **⚠️ Keep this file in sync.** This is a **hand-maintained** document (not auto-generated).
 > If you change any game data or cost, browser behavior, or numbers below, you must update this file.
@@ -32,6 +32,7 @@ building by building, recipe by recipe.
 | Camps / fires / sleep | §5 | `js/actions.js` → `sleepFor`, `campAction`, `passMinutes` |
 | Scout / underground | §9 | `js/actions.js` → `explore`; `js/world-map.js` → `undergroundExplore` |
 | Map features / events | §15 | `js/data.js` → `MAP_FEATURES`; `js/world-map.js` → `triggerEvent` |
+| World size / terrain generation | §3 | `js/world-map.js` → `biomeAt`, `generateChunk`, `generateMap`; `js/data.js` → `CHUNK` |
 | Needs decay & health drain | §14 | `js/actions.js` → `decaySurvivor` |
 | Storage caps, spoilage | §14 | `js/helpers.js` → `totalStorageCap`, `foodStorageCap` |
 
@@ -56,9 +57,21 @@ The game runs on four "currencies".
 - **Live mode:** the ▶ Live button advances **15 game-minutes per real tick**. Speeds: 1× ≈ every 12 s, 2× ≈ 6 s, 3× ≈ 2.5 s.
 - Walking and actions advance the clock and can trigger phase ticks (decay, production, raids, encounters).
 
-**Storage caps (📦):** base **80** per resource. +100 per Storage Shed, +400 per Warehouse,
-+50 per Fuel Depot. Food 🍞 / Crops 🌾 / Meat 🍖 get an extra +200 per Food Cellar.
-Food spoils if stored above 90% of its cap.
+**Shared storage:** the campfire holds **80 load total**, including stored equipment.
+Each Storage Shed adds **100**, Warehouse **400**, and Fuel Depot **50** shared load.
+Food/Crops/Meat use **200 food-only load per Food Cellar** before general storage.
+Food can spoil when total stored load exceeds 90% of general + cellar capacity.
+
+**Carrying and transfers:** every personal pickup, harvest, trade and crafting output goes into
+inventory, even at home. Carrying capacity is **30 load**, **45** with an equipped Canvas Backpack,
+or **65** with a Framed Backpack. Tools and equipped gear count. Stand on or next to the home
+campfire or a storage building to access base supplies. Unload materials (keep travel consumables)
+or unload all supplies (keep gear). Transfers move only what fits; leftovers stay in the source.
+
+**Water containers:** the starting container holds **3 units**. Each carried Canteen adds **3**;
+each Bucket adds **5**. Clean and dirty water share this capacity and each weigh **0.6 load**.
+A fetch collects at most the action yield, remaining source supply, free weight, and free liquid
+capacity. Full packs/containers and depleted sources block gathering without time/energy/tool cost.
 
 ---
 
@@ -79,6 +92,26 @@ Everything else must be unlocked with 🧠 research (§11).
 
 Each tile you step onto costs **time** (⏳) and **energy** (⚡) based on its biome.
 Costs are the **base** values; penalties (below) multiply both.
+
+> **Terrain grows procedurally as you explore, with no fixed map edges.** Terrain is
+> generated in 20×20-tile chunks from a per-run seed. Drawing unseen fog does not load
+> chunks. Nearby interactions may load a neighbouring chunk, but distant unexplored areas
+> are not generated or simulated. At most 48 terrain chunks are cached at once.
+> Saves store changed tiles (including depletion, creatures, and structures), deduplicating
+> repeated tile states into per-chunk palettes, plus compact
+> exploration masks: a fully explored chunk uses 100 hexadecimal characters for its mask.
+> Untouched terrain regenerates from the seed. Save size still grows with exploration and
+> changes, and browser storage is finite; failed saves are reported in the game log.
+> Existing fixed-map saves retain all their old terrain and coordinates, then generate new
+> terrain beyond the old edges. Generator settings live in `js/world-map.js` (`biomeAt`,
+> `generateChunk`) and `js/data.js` (`CHUNK`); movement costs below are unchanged.
+>
+> **Local world simulation:** entity movement and daily renewal operate only on explored
+> tiles within 28 tiles on each axis of the player or campfire. Distant regions retain their
+> last state until active again; no elapsed-time catch-up is applied. Moving entities stay
+> on explored ground. Daily renewal makes up to 35 resource-placement attempts and 12
+> entity-placement attempts (60% chance per entity attempt) across that active ground.
+> Unique NPCs are excluded from respawns. Auto-walk still selects a lowest-time known route.
 
 ### Per-tile cost by biome
 
@@ -140,6 +173,9 @@ Costs are the **base** values; penalties (below) multiply both.
 
 Time ⏳ and energy ⚡ per action. "Yields" assume a healthy survivor; tool bonuses noted below.
 A survivor must be **adjacent to** the required source (water, forest, deposit…).
+All yields below are maxima before remaining source stock and carrying space are applied.
+Quick actions and map searches share the same reserve. No overflow cache is generated by
+repeatable gathering: uncollected material stays in the source. Actual collected amounts are logged.
 
 | Action | Icon | ⏳ Time | ⚡ Energy | Requires | Yields / effect |
 |---|:---:|:---:|:---:|---|---|
@@ -276,15 +312,15 @@ Buildings are placed on the town grid near the campfire and cost resources up fr
 
 | Building | Cat | Cost | 🔨 Time | Workers | Max | Effect |
 |---|---|:---:|:---:|:---:|:---:|---|
-| 🔥 Campfire | Survival | free | 45 min | 0 | 1 | warmth, cooking |
+| 🔥 Campfire | Survival | free | 45 min | 0 | 1 | warmth, cooking, 80 shared storage load |
 | ⛺ Tent | Shelter | 4 Cloth, 4 Wood | 45 min | 0 | 12 | housing 1 |
 | 🛖 Shelter | Shelter | 10 Wood, 4 Cloth | 180 min | 0 | 18 | housing 2 |
 | 🏠 Wooden Hut | Shelter | 25 Wood, 4 Nails, 4 Cloth | 180 min | 0 | 24 | housing 3 |
 | 🏡 Stone Hut | Shelter | 25 Stone, 10 Wood, 6 Nails | 180 min | 0 | 24 | housing 4, +safety |
 | 🏘 Family Cabin | Shelter | 30 Wood, 20 Stone, 10 Planks, 8 Nails | 180 min | 0 | 18 | housing 6, +happiness |
-| 📦 Storage Shed | Storage | 15 Wood, 4 Nails | 120 min | 1 | 24 | +100 resource cap |
-| 🏬 Warehouse | Storage | 50 Wood, 30 Stone, 20 Nails, 20 Planks | 480 min | 1 | 12 | +400 resource cap |
-| 🥖 Food Cellar | Storage | 20 Stone, 10 Wood, 10 Clay | 120 min | 0 | 12 | +200 food cap, slows spoilage |
+| 📦 Storage Shed | Storage | 15 Wood, 4 Nails | 120 min | 1 | 24 | +100 shared load; capacity needs no worker |
+| 🏬 Warehouse | Storage | 50 Wood, 30 Stone, 20 Nails, 20 Planks | 480 min | 1 | 12 | +400 shared load; capacity needs no worker |
+| 🥖 Food Cellar | Storage | 20 Stone, 10 Wood, 10 Clay | 120 min | 0 | 12 | +200 food/crops/meat-only load |
 | 🛢 Rain Barrel | Water | 8 Wood, 2 Nails | 45 min | 1 | 24 | +0.5 Dirty Water/day |
 | 💦 Water Collector | Water | 12 Wood, 6 Metal, 4 Nails | 120 min | 1 | 12 | +3 Dirty Water/worker |
 | 🕳 Well | Water | 25 Stone, 10 Wood, 4 Rope | 120 min | 1 | 9 | +3 Clean Water/worker |
@@ -565,8 +601,8 @@ Equip in the Survivors/Inventory panel. Some items grant passive benefits while 
 | 🏹 Bow | weapon | damage **4**, durability 100 | required for ranged hunting & combat |
 | 🗡 Salvaged Weapon | weapon | damage **6**, durability 140 | 30% chance/attack to spend 1 Ammo for +6–12 dmg |
 | 🎣 Fishing Rod | rod | durability 100 | fish at a water source |
-| 🪣 Bucket | bucket | — | fetch **5** water at once |
-| 🧭 Canteen | canteen | — | fetch **3** water, use **20% less** travel thirst |
+| 🪣 Bucket | bucket | +5 liquid capacity | fetch up to **5** water at once |
+| 🧭 Canteen | canteen | +3 liquid capacity | fetch up to **3** water, use **20% less** travel thirst |
 | 🔥 Torch | light | vision **2**, durability 240 | night vision, deep-underground light |
 | 🏮 Lantern | light | vision **3**, durability 720 | better light, longer burn |
 | 🧭 Home Compass | compass | — | shows the bearing/distance to the settlement |
@@ -653,9 +689,12 @@ clamped to **0.25–0.88**. Costs **30 min + 4 ⚡**. Animals **flee on contact*
 **Morale** = `happiness × 0.5 + safety × 0.5`.
 
 ### Storage
-- Base cap **80** per resource; sheds +100, warehouses +400, fuel depots +50.
-- Food/Crops/Meat cap = base + **200 per Food Cellar**.
-- Overflow produced above the cap is **lost**. Food stored above 90% can spoil.
+- Campfire **80 shared load**; sheds +100, warehouses +400, fuel depots +50. Stored gear counts.
+- Food/Crops/Meat use **200 dedicated load per Food Cellar** first, then general storage.
+- Full storage pauses worker production before spending inputs. Manual harvesting/crafting needs pack space.
+- Unloading is allowed beside the home campfire or storage buildings, not throughout the build area.
+- Over-capacity old saves retain supplies; use/unload them or expand capacity before adding more.
+- Food can spoil above 90% total general + cellar load; existing keeper bonuses still apply.
 
 ### Camps & fires
 - Field fire: **1 Wood = 240 min (4 h)** of fuel.
@@ -671,53 +710,77 @@ clamped to **0.25–0.88**. Costs **30 min + 4 ⚡**. Animals **flee on contact*
 
 ## 🗺️ 15. Map features, entities & events
 
-Features are one-shot or charged nodes on the map. Harvesting consumes a charge (if finite)
-and the matching tool's durability, and costs time (usually **5–20 min**, minerals use the Mine time).
-Loot amounts are ranges.
+Resource features retain their map location when depleted. Collection consumes actual stock and
+tool durability, with the usual time cost (**5–20 min**, water **10 min**, minerals use Mine time).
+The old `charges` data remains for map compatibility and hazards; resource loot uses the reserves below.
+
+### Reserve supplies and replenishment
+| Family | Starting stock per source | Recovery after first withdrawal |
+|---|---|---|
+| Water | 20 clean / 20 dirty, according to source type | 5 game-hours |
+| Timber | 30 Wood | 48 game-hours |
+| Forage | 12 Food, 8 Herbs, 8 Seeds, 20 Fiber, 12 Crops | 24 game-hours |
+| Accessible minerals | 24 Stone, 16 Ore, 16 Charcoal, 20 Clay, 20 Sand | 72 game-hours |
+| Wildlife | 12 Meat, 8 Hides, 8 Bones per 8×8 area | 24 game-hours |
+| Other salvage | Each feature's maximum loot ×4; otherwise 12 per material | 72 game-hours |
+
+Only resources offered by the action/source can be collected. Mixed sources can have several
+family reserves and timers. At 25% or less, the source is running low; at zero it is depleted
+(water: "has run dry"). Inspect it to see stock and time until replenishment. The first withdrawal
+starts a fixed cycle; later collection does not restart it. Timers advance through in-game activities,
+including rest, and survive saving, loading and chunk eviction. No offline wall-clock refill.
+
+Player collection and workers share these stocks. Workers search explored sources within 8 tiles
+of home, or use explored claimed sites within the active simulation radius of the player or base.
+Constructed water collectors and livestock buildings have finite
+reserves scaled by building count. Crafting consumes existing inputs; crops require a new growth cycle.
+Event sites recover after 72 hours. Scout routes have a 12-hour cooldown; underground routes have
+a 24-hour cooldown plus shared local reserves. Finite-loot overflow remains at its source/entrance;
+ordinary gathering leaves uncollected stock untouched. Moving animals retain their origin area.
 
 ### Food & forage nodes
-| Feature | Icon | Biomes | Loot (per harvest) | Charges |
+| Feature | Icon | Biomes | Loot (per harvest) | Reserve / recovery |
 |---|---|:--:|---|:--:|
-| Berry Bush | 🫐 | plains, forest, hills | Food 1–3 | 2 (renewable) |
-| Mushroom Patch | 🍄 | forest, deep forest, swamp | Food 1–2, Herbs 0–1 | 2 (renewable) |
-| Wild Herbs | 🌿 | plains, forest, swamp, hills | Herbs 1–2 | 2 (renewable) |
-| Apple Tree | 🍎 | plains, forest | Food 2–4 | 2 (renewable) |
-| Edible Roots | 🥕 | plains, forest, hills | Food 1–2, Seeds 0–1 | 2 (renewable) |
-| Wild Wheat | 🌾 | plains | Crops 1–3, Seeds 1–2 | 1 (renewable) |
-| Bird Nest | 🥚 | forest, hills, mountain | Food 1–2, Cloth 0–1 | 1 |
-| Beehive | 🐝 | forest, hills | Food 2–4, Alcohol 0–1 | 1 · **sting −2–5 HP** |
-| Animal Carcass | 🦌 | plains, forest, hills, mountain | Meat 1–3, Hides 0–2, Bones 1–2 | 1 |
-| Seed Pods | 🌰 | plains, forest | Seeds 2–4 | 1 (renewable) |
-| Fishing Hole | 🐟 | plains, forest, hills | Meat 1–2, Dirty Water 0–1 | 3 |
-| Reeds | 🌾 | plains, swamp, forest | Fiber 3–6 | 3 (renewable) |
+| Berry Bush | 🫐 | plains, forest, hills | Food 1–3 | 12 Food / 24h |
+| Mushroom Patch | 🍄 | forest, deep forest, swamp | Food 1–2, Herbs 0–1 | 12 Food + 8 Herbs / 24h |
+| Wild Herbs | 🌿 | plains, forest, swamp, hills | Herbs 1–2 | 8 Herbs / 24h |
+| Apple Tree | 🍎 | plains, forest | Food 2–4 | 12 Food / 24h |
+| Edible Roots | 🥕 | plains, forest, hills | Food 1–2, Seeds 0–1 | 12 Food + 8 Seeds / 24h |
+| Wild Wheat | 🌾 | plains | Crops 1–3, Seeds 1–2 | 12 Crops + 8 Seeds / 24h |
+| Bird Nest | 🥚 | forest, hills, mountain | Food 1–2, Cloth 0–1 | 12 Food / 24h; 4 Cloth / 72h |
+| Beehive | 🐝 | forest, hills | Food 2–4, Alcohol 0–1 | 12 Food / 24h; 4 Alcohol / 72h; **sting −2–5 HP** |
+| Animal Carcass | 🦌 | plains, forest, hills, mountain | Meat 1–3, Hides 0–2, Bones 1–2 | Shared wildlife reserve / 24h |
+| Seed Pods | 🌰 | plains, forest | Seeds 2–4 | 8 Seeds / 24h |
+| Fishing Hole | 🐟 | plains, forest, hills | Meat 1–2, Dirty Water 0–1 | Shared wildlife reserve / 24h; 20 water / 5h |
+| Reeds | 🌾 | plains, swamp, forest | Fiber 3–6 | 20 Fiber / 24h |
 
 ### Wood / stone / metal nodes
-| Feature | Icon | Biomes | Loot | Charges |
+| Feature | Icon | Biomes | Loot | Reserve / recovery |
 |---|---|:--:|---|:--:|
-| Dead Tree | 🪾 | plains, forest, desert, radio | Wood 2–4 | 1 |
-| Fallen Log | 🪵 | forest, deep forest, hills | Wood 4–8 | 1 |
-| Pine Grove | 🌲 | forest, deep forest, mountain | Wood 3–6, Herbs 0–1 | 3 |
-| Ancient Oak | 🌳 | deep forest | Wood 8–12, Planks 0–2 | 1 |
-| Stone Outcrop | 🪨 | hills, mountain, desert | Stone 2–5 | 2 |
-| Boulder Pile | 🗿 | mountain, hills | Stone 3–6 | 2 |
-| Clay Deposit | 🟤 | swamp, plains | Clay 2–5 | 2 |
-| Sand Bank | 🟤 | plains, desert | Sand 3–5 | 3 |
-| Iron Vein | ⛓ | mountain, hills | **Ore 3–5**, Stone 1–2 | 2 |
-| Coal Seam | ⬛ | mountain, hills | Charcoal 2–5 | 2 |
-| Old Bones | 🦴 | plains, desert, radio | Bones 1–3 | 1 |
-| Scrap Pile | 🔩 | ruins, desert, road | Metal 2–4, Nails 0–2 | 2 |
-| Glass Shards | 🪟 | ruins | Glass 1–3 | 1 |
-| Rope Pile | 🪢 | ruins, road | Rope 2–4 | 1 |
+| Dead Tree | 🪾 | plains, forest, desert, radio | Wood 2–4 | 30 Wood / 48h |
+| Fallen Log | 🪵 | forest, deep forest, hills | Wood 4–8 | 30 Wood / 48h |
+| Pine Grove | 🌲 | forest, deep forest, mountain | Wood 3–6, Herbs 0–1 | 30 Wood / 48h; 8 Herbs / 24h |
+| Ancient Oak | 🌳 | deep forest | Wood 8–12, Planks 0–2 | 30 Wood / 48h; 8 Planks / 72h |
+| Stone Outcrop | 🪨 | hills, mountain, desert | Stone 2–5 | 24 Stone / 72h |
+| Boulder Pile | 🗿 | mountain, hills | Stone 3–6 | 24 Stone / 72h |
+| Clay Deposit | 🟤 | swamp, plains | Clay 2–5 | 20 Clay / 72h |
+| Sand Bank | 🟤 | plains, desert | Sand 3–5 | 20 Sand / 72h |
+| Iron Vein | ⛓ | mountain, hills | **Ore 3–5**, Stone 1–2 | 16 Ore + 24 Stone / 72h |
+| Coal Seam | ⬛ | mountain, hills | Charcoal 2–5 | 16 Charcoal / 72h |
+| Old Bones | 🦴 | plains, desert, radio | Bones 1–3 | Shared wildlife reserve / 24h |
+| Scrap Pile | 🔩 | ruins, desert, road | Metal 2–4, Nails 0–2 | 16 Metal + 8 Nails / 72h |
+| Glass Shards | 🪟 | ruins | Glass 1–3 | 12 Glass / 72h |
+| Rope Pile | 🪢 | ruins, road | Rope 2–4 | 16 Rope / 72h |
 
 ### Water sources
-| Feature | Icon | Biomes | Loot | Charges |
+| Feature | Icon | Biomes | Yield per fetch (before space/stock limits) | Reserve / recovery |
 |---|---|:--:|---|:--:|
-| Spring | 💧 | mountain, hills, forest | Clean Water 1–2 | 99 |
-| Old Well | 🕳 | plains, ruins | Clean Water 1–2 | 99 |
-| Hot Spring | ♨ | mountain, hills | Clean Water 1–2 · **heal +6, warmth +25** | 99 |
-| Pond | 🟦 | plains, forest, swamp | Dirty Water 2–4 | 99 |
-| Stream | 〰 | plains, forest, hills | Dirty Water 2–4 | 99 |
-| Rain Pool | 💦 | plains, ruins | Dirty Water 1–3 | 1 |
+| Spring | 💧 | mountain, hills, forest | 2 clean; canteen 3, bucket 5 | 20 / 5h |
+| Old Well | 🕳 | plains, ruins | 2 clean; canteen 3, bucket 5 | 20 / 5h |
+| Hot Spring | ♨ | mountain, hills | 2 clean; canteen 3, bucket 5 · successful fetch **heal +6, warmth +25** | 20 / 5h |
+| Pond | 🟦 | plains, forest, swamp | 2 dirty; canteen 3, bucket 5 | 20 / 5h |
+| Stream | 〰 | plains, forest, hills | 2 dirty; canteen 3, bucket 5 | 20 / 5h |
+| Rain Pool | 💦 | plains, ruins | 2 dirty; canteen 3, bucket 5 | 20 / 5h |
 
 ### Ruins & scavenge sites (selection of the richest)
 | Feature | Icon | Biomes | Loot |
@@ -791,6 +854,9 @@ Loot amounts are ranges.
 | The Old Sage | 🧓 | unique chat near the village |
 
 ### Trader offers (village or field)
+Each trader has **one bundle**, restocking **24 game-hours after purchase**. Reopening the
+dialog preserves the offer. Payment and the entire output's pack/container capacity are checked
+before exchange; bought goods enter the pack. Named hunter/mechanic trades are one-time encounters.
 Choose to **give** the left for the **get** right:
 - 10 Wood → 6 Food
 - 8 Wood → 6 Cloth

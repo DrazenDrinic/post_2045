@@ -10,7 +10,7 @@ A browser-based post-apocalyptic survival + town-builder + tile-map exploration 
 - Styling lives in `css/styles.css`.
 - Game code lives in `js/*.js`, loaded directly by script tags.
 - No build, no package manager, no server, no dependencies, no external assets.
-- Saves to `localStorage` under the key `post_2045_save_v1`.
+- Saves to `localStorage` under `post_2045_save_v2`, migrating existing `v1` maps without moving or replacing their tiles.
 - Designed to be opened directly in a browser.
 
 ## Hard constraints — do not violate
@@ -81,15 +81,30 @@ Script load order in `index.html`:
   knownNodes:   { [knowledgeNodeId]: true },
   relationships:[ {a, b, type:'partner'|'parent'} ],
   courtship:    { [survivorId]: progress0to100 },
-  // world map
-  map:        2D array [y][x] of { biome, feature: {type,charges}|null, entity: {type}|null },
+  // world map (procedural, infinite, generated per 20x20 chunk)
+  chunks:      { "cx,cy": 2D array [ly][lx] of { biome, feature, entity, settlementBuilding } },
+  chunkChanges:{ "cx,cy": { [localTileIndex]: tileState } },
+  worldVersion, chunkSize, // generator compatibility; not silently interchangeable
   playerX, playerY,
-  villageX, villageY,
+  villageX, villageY,   // always (0,0) on a fresh world
   explored:   { "x,y": true },
+  seed,                 // integer; deterministic terrain for this run
   followers:  [survivor objects in transit, not yet in survivors[]],
   stepAccum
 }
 ```
+
+`g.chunks` is a bounded runtime cache — do **not** read it directly. Use `tileAt(g, x, y)`
+(in `js/world-map.js`), which lazily generates a chunk, applies saved tile deltas, and returns
+the **live** tile object. Cached baselines and normalization flags live in WeakMaps/WeakSets,
+not in the save. `captureChunkChanges` records complete changed tiles before eviction;
+`pruneChunks` flushes deltas and evicts chunks outside the player/settlement neighbourhoods.
+Saves omit `chunks`, deduplicate changed tile states into per-chunk palettes, and pack
+`explored` into hexadecimal `exploredChunks` masks. Loading
+restores the runtime dictionary and accepts both fixed maps and earlier full-chunk saves.
+Do not change `CHUNK` or generator rules without a world-version migration. Simulation
+visits only explored tiles within `ACTIVE_MAP_RADIUS` of the player or village; rendering
+unseen fog must not call `tileAt`.
 
 Module-level non-serialized state: `_combat`, `_autoWalk`, `_activeTab`. Don't put these in `G`.
 
@@ -113,7 +128,7 @@ Module-level non-serialized state: `_combat`, `_autoWalk`, `_activeTab`. Don't p
 - **Map entity (hostile)**: `{icon, name, hostile:true, enemy:<ENEMIES key>, biomes:[...], nightOnly?}`.
 - **Map entity (huntable animal)**: `{icon, name, huntable:true, biomes:[...], loot:{...}, fleeChance?, danger?}`. Huntable animals flee on contact; ranged hunting is handled by the `hunt` quick action.
 - **Map entity (friendly)**: `{icon, name, friendly:"<type>", biomes:[...]}` — and add a matching `case "<type>":` in `openFriendlyDialog`.
-- **Biome**: add to `BIOMES`, and add a blob entry to the `blobs` array inside `generateMap` to make it spawn.
+- **Biome**: add to `BIOMES`, and return it from `biomeAt(g, x, y)` in `js/world-map.js` (thresholds on the elevation/moisture/temperature noise fields) so it spawns. There is no fixed map array to paint.
 - **Knowledge node**: append to `KNOWLEDGE` as `{id, name, cat, cost, req:[ids], desc, unlock:{buildings?:[], jobs?:[]}}`.
 - **Enemy stats**: `ENEMIES` defines the underlying combat stats; `MAP_ENTITIES.<hostile>.enemy` references it.
 

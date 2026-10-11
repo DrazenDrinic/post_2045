@@ -12,7 +12,7 @@ There is no build step, no package manager, no server, no external assets, and n
 ## How to run
 
 - Open `index.html` directly in Chrome / Firefox / Edge.
-- The save lives in `localStorage` under the key `post_2045_save_v1`.
+- The save lives in `localStorage` under `post_2045_save_v2`; old `v1` maps migrate in place.
 - The header has Save / Load / Reset / Help buttons. The game also autosaves after every action.
 
 ## How to syntax-check (no tests)
@@ -57,11 +57,11 @@ The script is organized top-to-bottom into the following sections — keep new c
    - `KNOWLEDGE` (research tree), `BUILDINGS`, `JOBS`, `TRAITS`
    - `BIOMES`, `MAP_FEATURES`, `MAP_ENTITIES` (world map)
    - `FIRST_NAMES`, `LAST_NAMES`
-2. **Settings constants** — `TICKS_PER_DAY`, `PHASES`, `MAP_W`/`MAP_H`, `VIEW_W`/`VIEW_H`, `VISION_DAY`/`VISION_NIGHT`, `STEP_PER_PHASE`, `SAVE_KEY`.
+2. **Settings constants** — `TICKS_PER_DAY`, `PHASES`, `CHUNK`, `VIEW_W`/`VIEW_H`, `VISION_DAY`/`VISION_NIGHT`, `STEP_PER_PHASE`, `SAVE_KEY`.
 3. **State** — `G` is the single game-state object. `newGame()` builds a fresh one. `makeSurvivor()` makes a survivor.
 4. **Helpers** — `rng`, `pick`, `rint`, `chance`, `clamp`, `addResource`, `pushLog`, `costString`, `getHousing`, `settlementDanger`, `settlementSafety`, etc.
 5. **Tick / day system** — `passPhase` → `advanceOnePhase` → `applyTick` → `onDayEnd`. `decaySurvivor`, `produceFromBuildings`, `autoConsume`, `rollThreats`, `raidEvent`.
-6. **World map** — `generateMap`, `paintBlob`, `populateFeatures`, `populateEntities`, `computeVisible`, `tryMove`, `startAutoWalk` / `stepAutoWalk`, `encounterTile`, `handleFeature`, `triggerEvent`, `openFriendlyDialog`, `recruitFollowersAtVillage`, `refreshMapDaily`.
+6. **World map** — `biomeAt`/`fbm` (noise terrain), `generateChunk`/`tileAt` (lazy 20×20 chunks), `generateMap`, `computeVisible`, `tryMove`, `startAutoWalk` / `stepAutoWalk`, `encounterTile`, `handleFeature`, `triggerEvent`, `openFriendlyDialog`, `recruitFollowersAtVillage`, `refreshMapDaily`.
 7. **Combat** — `startCombat`, `combatAttack`, `combatFlee`, `combatWin`, `combatLose`. Modal is rendered by `showCombatModal`. `startCombat` accepts `onWinAfter` and `onFleeAfter` callbacks (the map system uses these to remove defeated entities, etc.).
 8. **Player actions** — `playerAction(actionKey)`, `build`, `research`, `assignJob`, `spawnStranger`, `traderArrives`, `tryRelationship`, `birthChild`.
 9. **Render** — `render()` calls `renderHeader`, `renderLeft`, `renderRight`, `renderTabs`, `renderContent`. `renderContent` dispatches to one tab renderer (`renderMapTab`, `renderBuildTab`, `renderSurvivorsTab`, `renderJobsTab`, `renderKnowledgeTab`, `renderBuildingsTab`, `renderExploreTab`).
@@ -83,14 +83,25 @@ The script is organized top-to-bottom into the following sections — keep new c
   workerAssign: { [buildingId]: [survivorId, ...] },
   knownNodes: { [knowledgeNodeId]: true },
   relationships: [ {a, b, type:'partner'|'parent'} ],
-  // map
-  map: 2D array [y][x] of { biome, feature: {type,charges}|null, entity: {type}|null },
-  playerX, playerY, villageX, villageY,
+  // world map (procedural, infinite; cached per 20x20 chunk)
+  chunks: { "cx,cy": 2D array [ly][lx] of { biome, feature, entity, settlementBuilding } },
+  chunkChanges: { "cx,cy": { [localTileIndex]: tileState } },
+  worldVersion, chunkSize,
+  playerX, playerY, villageX, villageY,   // village is always (0,0) on a fresh world
+  seed,                                    // integer; deterministic terrain for this run
   explored: { "x,y": true },
   followers: [survivor objects, not yet in survivors[]],
   stepAccum
 }
 ```
+
+`g.chunks` is a bounded runtime cache — read tiles through `tileAt(g, x, y)` in `js/world-map.js`,
+which generates a chunk, applies saved tile deltas and returns the live tile object. Baselines
+are cached outside `G`; `captureChunkChanges` saves complete changed tiles before eviction.
+`pruneChunks` flushes changes and evicts chunks outside the player/settlement neighbourhoods.
+Only explored ground within `ACTIVE_MAP_RADIUS` of either location is simulated. Drawing
+unseen fog must not generate terrain. Changing `CHUNK` or generation rules requires an
+explicit world-version migration.
 
 ## Conventions
 
@@ -115,14 +126,14 @@ The script is organized top-to-bottom into the following sections — keep new c
 - Hostile: `{icon, name, hostile:true, enemy:<ENEMIES key>, biomes:[...], nightOnly?}`.
 - Friendly: `{icon, name, friendly:"<type>", biomes:[...]}` — also add a matching `case "<type>":` in `openFriendlyDialog`.
 
-**Add a biome** — add to `BIOMES`: `{name, icon, bg, fg, cost, blocks?, hazard?, radiation?, cold?, dark?, dry?, water?, safe?}`. Then reference the new biome id in any feature/entity's `biomes` list. Also add a blob entry to the `blobs` array in `generateMap` if you want it to spawn naturally.
+**Add a biome** — add to `BIOMES`: `{name, icon, bg, fg, cost, blocks?, hazard?, radiation?, cold?, dark?, dry?, water?, safe?}`. Then reference the new biome id in any feature/entity's `biomes` list, and return it from `biomeAt(g, x, y)` in `js/world-map.js` (thresholds on the elevation/moisture/temperature noise fields) so it spawns naturally. There is no fixed map array or `blobs` list.
 
 **Add a knowledge node** — append to `KNOWLEDGE`: `{id, name, cat, cost, req:[ids], desc, unlock:{buildings?:[], jobs?:[]}}`. The tree renderer groups by `cat`; pick from existing categories or introduce a new one.
 
 ## Save format / compatibility
 
-- The save is `JSON.stringify(G)` under `SAVE_KEY`.
-- `load()` backfills missing fields so older saves still load (it regenerates the map if missing, etc.). If you change `G`'s shape in a non-backfillable way, bump `SAVE_KEY` (currently `post_2045_save_v1`) so old saves are ignored instead of crashing.
+- Saves serialize a snapshot under `SAVE_KEY`, excluding the live `chunks` cache and replacing `explored` with compact hexadecimal `exploredChunks` masks. Terrain changes live in `chunkChanges`, with repeated tile states deduplicated into per-chunk palettes on disk and expanded when loading.
+- `load()` restores exploration and backfills older saves. Fixed-map saves preserve every old tile and coordinate; earlier full-chunk saves become tile deltas. Missing cached chunks are normal and must not reset the world. Unsupported generator versions/chunk sizes fail loading without replacing the stored save.
 
 ## UI notes
 

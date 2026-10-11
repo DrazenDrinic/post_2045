@@ -23,8 +23,8 @@ function newGame(){
     courtship: {}, // survivorId -> progress toward marriage with player
     eventCooldowns: {},
     seed: Math.floor(Math.random()*1e9),
-    // map state
-    map: null,
+    // Map state: bounded live cache; generateMap initializes version and tile deltas.
+    chunks: {},
     playerX: 0, playerY: 0,
     villageX: 0, villageY: 0,
     explored: {}, // "x,y" -> true
@@ -66,7 +66,7 @@ function startNewRun(){
   G.jobs[G.survivors[0].id] = "none";
   if (typeof _buildToPlace !== "undefined") _buildToPlace = null;
   if (typeof _combat !== "undefined") _combat = null;
-  if (typeof _activeTab !== "undefined") _activeTab = "town";
+  if (typeof _activeTab !== "undefined") _activeTab = "map";
   cancelAutoWalk();
   save();
   render();

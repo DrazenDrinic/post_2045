@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="water-title water-desc">
+  <title id="water-title">Clean water</title>
+  <desc id="water-desc">A dented blue expedition canteen with a canvas carrying strap and an enamel water-drop badge.</desc>
+  <defs>
+    <linearGradient id="water-body" x1="68" y1="93" x2="184" y2="197" gradientUnits="userSpaceOnUse"><stop stop-color="#80b9c3"/><stop offset=".48" stop-color="#528a9b"/><stop offset="1" stop-color="#2e5667"/></linearGradient>
+    <linearGradient id="water-cap" x1="105" y1="42" x2="151" y2="65" gradientUnits="userSpaceOnUse"><stop stop-color="#b2bab0"/><stop offset="1" stop-color="#6c7f80"/></linearGradient>
+  </defs>
+  <ellipse cx="127" cy="222" rx="75" ry="12" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M89 85c-27-45-55-17-43 36l17 68 12-6-16-65c-8-34 1-40 18-26Z" fill="#a38a5b"/>
+    <path d="M85 80C66 53 49 68 54 97" stroke="#deca91" stroke-width="3"/>
+    <path d="M105 57h47v30c31 6 48 27 48 53v49c0 20-19 29-40 31H96c-24-2-39-12-39-31v-49c0-26 17-47 48-53Z" fill="url(#water-body)"/>
+    <path d="M172 104c12 12 16 27 16 44v39c0 15-12 21-29 23H93c-12-1-23-5-29-11 6 14 20 19 32 21h64c21-2 40-11 40-31v-49c0-15-7-29-17-39Z" fill="#294c5b" stroke="none" opacity=".6"/>
+    <path d="M78 137c0-19 11-30 31-35m-33 49v25" stroke="#b6d7d4" stroke-width="6"/>
+    <path d="M99 50q29-8 59 0v16q-28 10-59 0Z" fill="url(#water-cap)"/>
+    <ellipse cx="128.5" cy="49" rx="29.5" ry="7" fill="#cad1bd"/>
+    <path d="m110 56 1 10m12-8v11m12-11v11m12-13-1 11" stroke="#445d63" stroke-width="3"/>
+    <path d="M152 66c23 0 39 11 31 27-5 10-21 11-25 1" stroke="#cfb67e" stroke-width="5"/>
+    <path d="M94 118q34-12 69 0l-3 65q-32 18-63 0Z" fill="#e3dbc0"/>
+    <path d="m101 125 54-1-2 53q-24 14-47 0Z" stroke="#b3aa8d" stroke-width="2"/>
+    <path d="M128 134c-4 9-17 20-17 30a17 17 0 0 0 34 0c0-10-13-21-17-30Z" fill="#528eab" stroke-width="3"/>
+    <path d="M118 163c-1 5 2 9 6 10" stroke="#cae8e3" stroke-width="3"/>
+    <path d="m67 190 22 6m82-80 9 9m-14 70 9-5" stroke="#b5c9bb" stroke-width="3"/>
+    <path d="m78 199 10 2m82-81 4 4m-17 84 18-5" stroke="#d7aa72" stroke-width="3"/>
+    <path d="M68 119h9v17h-9Z" fill="#c2ad7f" stroke-width="3"/>
+    <path d="m211 64 2 10 10 2-10 2-2 10-2-10-10-2 10-2Z" fill="#b6d7d4" stroke="none"/>
+  </g>
+</svg>

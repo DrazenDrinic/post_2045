@@ -224,7 +224,11 @@ const BUILDINGS = {
 
 // ===== WORLD MAP DATA =====
 
-const MAP_W = 180, MAP_H = 120;
+// The world is unbounded and generated on demand in CHUNKxCHUNK blocks.
+const CHUNK = 20;
+const WORLD_VERSION = 1; // Increment only with an explicit terrain migration.
+const MAX_CACHED_CHUNKS = 48;
+const ACTIVE_MAP_RADIUS = 28;
 const VIEW_W = 33, VIEW_H = 23;
 const VISION_DAY = 6;
 const VISION_NIGHT = 3;
@@ -526,8 +530,8 @@ const LAST_NAMES  = ["Ash","Briar","Coal","Drift","Ember","Forge","Grim","Hollow
 const TICKS_PER_DAY = 4;     // morning, midday, evening, night
 const PHASES = ["Morning","Midday","Evening","Night"];
 const BASE_RES_CAP = 80;     // base storage cap
-const SAVE_KEY = "post_2045_save_v1";
-const LEGACY_SAVE_KEYS = [String.fromCharCode(97,115,104,101,115,95,111,102,95,116,111,109,111,114,114,111,119,95,115,97,118,101,95,118,49)];
+const SAVE_KEY = "post_2045_save_v2";
+const LEGACY_SAVE_KEYS = ["post_2045_save_v1", String.fromCharCode(97,115,104,101,115,95,111,102,95,116,111,109,111,114,114,111,119,95,115,97,118,101,95,118,49)];
 const STARTER_BUILDINGS = new Set(["campfire", "tent", "storage_shed", "rain_barrel", "garden", "guard_post"]);
 const STARTING_RESOURCES = {wood:40, food:5, water:4, cloth:8, nails:6, seeds:3, weapons:1, arrows:4, herbs:1};
 const BUILDING_CAP_MULTIPLIER = 3;
@@ -562,6 +566,17 @@ const RESOURCE_WEIGHTS = {wood:1, stone:1.2, ore:1.2, metal:0.8, iron:0.8, steel
   planks:0.8, bricks:1, clay:0.8, sand:0.8, water:0.6, dirty_water:0.6,
   food:0.3, meat:0.4, crops:0.3, seeds:0.05, herbs:0.05, arrows:0.05,
   ammo:0.05, nails:0.05, fiber:0.1, cloth:0.2, rope:0.2, weapons:2, tools:1.5};
+// Finite local reserves. Recovery starts at the first withdrawal, in game minutes.
+const SOURCE_RULES = {
+  water:{name:"Water source",minutes:300,stock:{water:20,dirty_water:20}},
+  wood:{name:"Timber",minutes:2880,stock:{wood:30}},
+  forage:{name:"Foraging ground",minutes:1440,stock:{food:12,herbs:8,seeds:8,fiber:20,crops:12}},
+  mineral:{name:"Accessible deposit",minutes:4320,stock:{stone:24,ore:16,charcoal:16,clay:20,sand:20}},
+  wildlife:{name:"Local wildlife",minutes:1440,stock:{meat:12,hides:8,bones:8}},
+  salvage:{name:"Salvage",minutes:4320,stock:{}},
+};
+const SOURCE_DEFAULT_STOCK = 12;
+const BASE_LIQUID_CAP = 3;
 const ITEMS = {
   stone_axe:{name:"Stone Axe",kind:"axe",tier:1,weight:1.5,durability:60},
   iron_axe:{name:"Iron Axe",kind:"axe",tier:2,weight:1.5,durability:140},
@@ -578,8 +593,8 @@ const ITEMS = {
   bow:{name:"Bow",kind:"bow",slot:"weapon",damage:4,weight:1,durability:100},
   salvaged_weapon:{name:"Salvaged Weapon",kind:"weapon",slot:"weapon",damage:6,weight:2,durability:140},
   fishing_rod:{name:"Fishing Rod",kind:"rod",tier:1,weight:0.8,durability:100},
-  bucket:{name:"Bucket",kind:"bucket",weight:0.8},
-  canteen:{name:"Canteen",kind:"canteen",weight:0.3},
+  bucket:{name:"Bucket",kind:"bucket",weight:0.8,liquidCapacity:5},
+  canteen:{name:"Canteen",kind:"canteen",weight:0.3,liquidCapacity:3},
   torch:{name:"Torch",kind:"light",vision:2,weight:0.3,durability:240},
   lantern:{name:"Lantern",kind:"light",vision:3,weight:0.8,durability:720},
   compass:{name:"Home Compass",kind:"compass",weight:0.2},
@@ -656,6 +671,11 @@ Object.assign(BUILDINGS, {
 });
 STARTER_BUILDINGS.add("crafting_table"); STARTER_BUILDINGS.add("furnace"); STARTER_BUILDINGS.add("fishing_station");
 BUILDINGS.storage_shed.workers = 1;
+BUILDINGS.campfire.desc = "Warmth, cooking and an 80-load shared base stockpile. Unload beside the fire.";
+BUILDINGS.storage_shed.desc = "+100 shared storage load. Access base supplies beside this building; no worker needed for capacity.";
+BUILDINGS.warehouse.desc = "+400 shared storage load, including equipment.";
+BUILDINGS.food_cellar.desc = "+200 food/crops/meat-only load. Food uses cellar space before general storage.";
+BUILDINGS.fuel_depot.desc = "+50 shared storage load and safe fuel/oil storage.";
 BUILDINGS.rain_barrel.workers = 1;
 BUILDINGS.workshop.effects = {convert:{from:{metal:1,wood:1},to:{tools:0.3,nails:2},perWorker:3}};
 BUILDINGS.toolsmith.effects = {convert:{from:{metal:2,wood:1},to:{tools:1,nails:2},perWorker:2}};
@@ -704,7 +724,7 @@ for (const [id,desc] of Object.entries({
   shovel:"Dig sand and clay.",hoe:"Halves planting time.",knife:"More meat, hides and bones from hunting.",
   hammer:"Build 20% faster.",saw:"Cut planks 40% faster.",crowbar:"Faster salvage and extra scrap from ruins.",
   bow:"Required for ranged hunting; equip for combat.",weapon:"Equip for combat; carried ammo can add damage.",
-  rod:"Fish beside a water source.",bucket:"Fetch 5 water at once.",canteen:"Fetch 3 water and use 20% less travel thirst.",
+  rod:"Fish beside water; local fish stocks need time to recover.",bucket:"Adds 5 water capacity; fetch up to 5 at once.",canteen:"Adds 3 water capacity; fetch up to 3 and use 20% less travel thirst.",
   light:"Adds night vision and permits deep underground searches; consumes fuel minutes.",
   compass:"Points toward the settlement while carried.",survey:"Survey a ten-tile radius.",
   bedroll:"Deploy to improve sleep warmth and recovery.",tent:"Deploy to shelter from rain and reduce incidents.",

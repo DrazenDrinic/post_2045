@@ -148,8 +148,10 @@ function beginSageDeepThink(){
 function offlineSageReply(g, text){
   const p = g.survivors[0];
   const q = text.toLowerCase();
+  if (/storage|stockpile|carry|carrying|full|unload/.test(q)) return "All personal pickups go into your pack. Walk beside the home campfire or a storage building and use Inventory to unload. Base storage starts at 80 shared load, including equipment. Sheds add 100, warehouses 400, and food cellars 200 food-only load. Leftovers stay in your pack when storage is full.";
+  if (/deplet|running low|dry|refill|recover|source/.test(q)) return "Every gathering source has finite stock. Inspect it for the remaining supply and recovery timer. Water recovers on a 5-hour cycle after first collection, plants and wildlife in 24 hours, timber in 48, minerals and salvage in 72. Workers share these reserves. Rest or work elsewhere while a source recovers.";
   if (/sleep|tent|camp|cold|bag/.test(q)) return "Check the Sleep preview before resting outside. Deploy a sleeping bag and tent, or build a lean-to from 4 wood and 4 fiber. One wood fuels your field fire for four hours. Exposure and radiation can kill; an attack interrupts sleep.";
-  if (/craft|inventory|pack|compass|tool/.test(q)) return "Build a Crafting Table, then open Crafting for recipes. Carry tools to use them; equip weapons, clothes and backpacks. The compass points home only while carried. Packing presets take food and water from town stock; take shelter separately.";
+  if (/craft|inventory|pack|compass|tool/.test(q)) return "Personal crafting and pickups enter your pack. Equip backpacks for 45 or 65 load; your basic capacity is 30. Return beside the campfire or storage to transfer supplies. Starting water capacity is 3; a canteen adds 3 and a bucket adds 5. Build a Crafting Table for tools and equipment.";
   if (/farm|crop|seed/.test(q)) return "Plant a seed in a Garden and keep its moisture above 10. Compost improves fertility. Farmers tend a plot each, including harvesting and replanting; Seed Savers make seeds instead. Jobs can also maintain crafting stock targets.";
   const urgent = detectHint(g);
   if (urgent && /what|next|help|stuck|do|advice|survive/.test(q)){
@@ -158,7 +160,7 @@ function offlineSageReply(g, text){
   if (/water|thirst|drink/.test(q)){
     if (playerAmount(g,"water") >= 1) return "Drink clean water now. A dry throat makes poor choices. After that, keep dirty water boiling while the fire still has wood.";
     if (playerCanPay(g,{dirty_water:2,wood:1})) return "You have the ingredients: boil dirty water near a fire. Clean water beats courage every time.";
-    return "Seek springs, wells, ponds, or streams on the map. Bring back dirty water if you must, but boil it before it becomes sickness.";
+    return "Seek springs, wells, ponds or streams. Sources have 20 water and a 5-hour recovery cycle. Carry only what fits: your starter container holds 3, canteens add 3 and buckets add 5. Bring it back to the campfire and unload. Boil dirty water before drinking.";
   }
   if (/food|hunger|starv|eat/.test(q)){
     if (playerAmount(g,"food") >= 1) return "Eat before your hands shake. Then forage or cook meat and crops into proper food.";

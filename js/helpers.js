@@ -41,10 +41,35 @@ function foodStorageCap(g){
 }
 
 function addResource(g, key, amount){
-  const cap = (key==="food"||key==="crops"||key==="meat") ? foodStorageCap(g) : totalStorageCap(g);
   const before = g.resources[key] || 0;
-  g.resources[key] = amount>=0 ? before+Math.min(amount,Math.max(0,cap-before)) : Math.max(0,before+amount);
+  g.resources[key] = amount>=0 ? before+Math.min(amount,storageRoom(g,key)) : Math.max(0,before+amount);
   return g.resources[key] - before;
+}
+
+function foodResource(key){ return ["food","crops","meat"].includes(key); }
+function storageUsage(g,resources=g.resources,gear=g.townGear || []){
+  let general=gear.reduce((n,i)=>n+(ITEMS[i.type]?.weight || 0),0),food=0;
+  for(const [k,v] of Object.entries(resources)){
+    if(foodResource(k)) food+=v*resourceWeight(k); else general+=v*resourceWeight(k);
+  }
+  const cellar=foodStorageCap(g)-totalStorageCap(g);
+  return {general:general+Math.max(0,food-cellar),food:Math.min(food,cellar),total:general+food,cellar};
+}
+function storageRoom(g,key){
+  const u=storageUsage(g),free=Math.max(0,totalStorageCap(g)-u.general);
+  if(u.general>totalStorageCap(g)+1e-8) return 0;
+  return (free+(foodResource(key)?Math.max(0,u.cellar-u.food):0))/resourceWeight(key);
+}
+function storageFits(g,output={},cost={},item=null){
+  const resources={...g.resources};
+  for(const [k,v] of Object.entries(cost)) resources[k]=Math.max(0,(resources[k]||0)-v);
+  for(const [k,v] of Object.entries(output)) resources[k]=(resources[k]||0)+v;
+  const gear=item?[...(g.townGear||[]),{type:item}]:(g.townGear||[]);
+  return storageUsage(g,resources,gear).general<=totalStorageCap(g)+1e-8;
+}
+function storageAccess(g){
+  if(Math.max(Math.abs(g.playerX-g.villageX),Math.abs(g.playerY-g.villageY))<=1) return true;
+  return !!nearbySettlementBuilding(g,(b,id)=>id==="campfire" || b.effects?.storage || b.effects?.food_storage);
 }
 
 function initTown(g){
@@ -132,7 +157,7 @@ function jobAvailable(g, jobKey){
   if (jobKey==="none") return true;
   const j = JOBS[jobKey];
   if (!j) return false;
-  if (j.site && !Object.values(g.workSites || {}).some(s=>s.kind===j.site && s.remaining>0)) return false;
+  if (j.site && !Object.values(g.workSites || {}).some(s=>s.kind===j.site)) return false;
   if (j.building){
     if (!g.buildings[j.building]) return false;
     // Count workers vs slots
@@ -252,15 +277,28 @@ function packWeight(g){
   return Object.entries(g.inventory?.resources || {}).reduce((sum,[k,v])=>sum+v*resourceWeight(k),0)
     + (g.inventory?.gear || []).reduce((sum,i)=>sum+(ITEMS[i.type]?.weight || 0),0);
 }
+function liquidAmount(g){ return (g.inventory?.resources.water||0)+(g.inventory?.resources.dirty_water||0); }
+function liquidCapacity(g){ return BASE_LIQUID_CAP+(g.inventory?.gear||[]).reduce((n,i)=>n+(ITEMS[i.type]?.liquidCapacity||0),0); }
+function carryRoom(g,key){
+  const room=Math.max(0,packCapacity(g)-packWeight(g))/resourceWeight(key);
+  return Math.max(0,Math.min(room,["water","dirty_water"].includes(key)?liquidCapacity(g)-liquidAmount(g):Infinity));
+}
+function playerOutputFits(g,output={},cost={},item=null){
+  const resources={...g.inventory.resources};
+  for(const [k,v] of Object.entries(cost)) resources[k]=Math.max(0,(resources[k]||0)-Math.max(0,v-(storageAccess(g)?g.resources[k]||0:0)));
+  for(const [k,v] of Object.entries(output)) resources[k]=(resources[k]||0)+v;
+  const weight=Object.entries(resources).reduce((n,[k,v])=>n+v*resourceWeight(k),0)+(g.inventory.gear||[]).reduce((n,i)=>n+ITEMS[i.type].weight,0)+(item?ITEMS[item].weight:0);
+  return weight<=packCapacity(g)+1e-8 && (resources.water||0)+(resources.dirty_water||0)<=liquidCapacity(g)+(item?ITEMS[item].liquidCapacity||0:0)+1e-8;
+}
 function playerAmount(g, key){
-  return (g.inventory?.resources[key] || 0) + (atSettlement(g) ? (g.resources[key] || 0) : 0);
+  return (g.inventory?.resources[key] || 0) + (storageAccess(g) ? (g.resources[key] || 0) : 0);
 }
 function playerCanPay(g, cost){ return Object.entries(cost).every(([k,v])=>playerAmount(g,k)+1e-8>=v); }
 function playerPay(g, cost){
   if (!playerCanPay(g,cost)) return false;
   for (const [k,v] of Object.entries(cost)){
     // Preserve packed rations when working at home.
-    const fromTown = atSettlement(g) ? Math.min(g.resources[k] || 0,v) : 0;
+    const fromTown = storageAccess(g) ? Math.min(g.resources[k] || 0,v) : 0;
     g.resources[k] = (g.resources[k] || 0)-fromTown;
     const fromBag = v-fromTown;
     g.inventory.resources[k] = Math.max(0,(g.inventory.resources[k] || 0)-fromBag);
@@ -272,8 +310,8 @@ function cacheAt(g, key=positionKey(g)){
   return g.caches[key];
 }
 function addCarried(g, key, amount, leaveOverflow=true){
-  const space = Math.max(0,packCapacity(g)-packWeight(g));
-  const got = Math.min(amount,Math.floor((space/resourceWeight(key)+1e-8)*1000)/1000);
+  if(!Number.isFinite(amount) || amount<=0) return 0;
+  const got = Math.min(amount,Math.floor((carryRoom(g,key)+1e-8)*1000)/1000);
   g.inventory.resources[key] = (g.inventory.resources[key] || 0)+got;
   if (leaveOverflow && amount-got>0.001){
     const cache = cacheAt(g);
@@ -282,7 +320,15 @@ function addCarried(g, key, amount, leaveOverflow=true){
   }
   return got;
 }
-function addPlayerResource(g,key,amount){ return atSettlement(g) ? addResource(g,key,amount) : addCarried(g,key,amount); }
+function addPlayerResource(g,key,amount){ return addCarried(g,key,amount); }
+function grantSourceLoot(g,key,amount,x,y){
+  const got=addCarried(g,key,amount,false),left=amount-got;
+  if(left>0.001){
+    const cache=cacheAt(g,`${x},${y}`);cache.resources[key]=(cache.resources[key]||0)+left;
+    pushLog(g,`${fmt(left)} ${RESOURCES[key].name} remain at (${x}, ${y}).`,"warn");
+  }
+  return got;
+}
 function makeItem(g,type){
   const item = {id:g.nextItemId++,type};
   if (ITEMS[type].durability) item.durability = ITEMS[type].durability;
@@ -290,7 +336,8 @@ function makeItem(g,type){
 }
 function giveItem(g,type,town=false){
   const item = makeItem(g,type);
-  if (town) g.townGear.push(item);
+  if (town && storageFits(g,{}, {},type)) g.townGear.push(item);
+  else if(town) return null;
   else if (packWeight(g)+ITEMS[type].weight <= packCapacity(g)) g.inventory.gear.push(item);
   else { cacheAt(g).gear.push(item); pushLog(g, `${ITEMS[type].name} left in the cache here.`, "warn"); }
   return item;
@@ -322,6 +369,7 @@ function recipeBlocker(g,id,worker=false){
   if (r.tech && !g.knownNodes[r.tech]) return "Research "+(KNOWLEDGE.find(n=>n.id===r.tech)?.name || r.tech)+".";
   if (!hasStation(g,r.station,worker)) return "Need "+(BUILDINGS[r.station]?.name || "a nearby fire")+".";
   if (!(worker ? canPay(g,r.cost) : playerCanPay(g,r.cost))) return "Missing ingredients.";
+  if (!(worker ? storageFits(g,r.output,r.cost,r.item) : playerOutputFits(g,r.output,r.cost,r.item))) return worker ? "Base storage full." : "Free pack or water-container space before crafting.";
   if (!worker && g.survivors[0].energy<1) return "Rest first.";
   return "";
 }
@@ -334,7 +382,128 @@ function recipeMinutes(g,id){
   const r=RECIPES[id];
   return id==="planks" && carriedTool(g,"saw") ? Math.round(r.minutes*0.6) : r.minutes;
 }
-function resourceCap(g,key){ return ["food","crops","meat"].includes(key) ? foodStorageCap(g) : totalStorageCap(g); }
+// Reserves live outside the disposable chunk cache, keyed by location and resource family.
+function resourceFamily(key){
+  for(const [family,rule] of Object.entries(SOURCE_RULES)) if(key in rule.stock) return family;
+  return "salvage";
+}
+function sourceAt(g,x,y,family){
+  const tile=tileAt(g,x,y),feature=MAP_FEATURES[tile.feature?.type];
+  const rule=SOURCE_RULES[family],stock={...rule.stock};
+  for(const [k,range] of Object.entries(feature?.loot||{})){
+    if(resourceFamily(k)===family && !(k in stock)) stock[k]=Math.max(1,range[1]*4);
+  }
+  const area=family==="wildlife"?`${Math.floor(x/8)},${Math.floor(y/8)}:wildlife-area`:`${x},${y}:${family}`;
+  return {key:area,x,y,family,stock,minutes:rule.minutes,label:family==="wildlife"?rule.name:feature?.name || rule.name};
+}
+function sourceState(g,source){
+  if(!g.sourceStocks) g.sourceStocks={};
+  let state=g.sourceStocks[source.key];
+  if(!state || state.refillAt && state.refillAt<=gameMinutes(g)){
+    state={stock:{...source.stock},refillAt:0};
+  }
+  return state;
+}
+function sourceRemaining(g,source,key){
+  const state=sourceState(g,source);
+  return state.stock[key] ?? source.stock[key] ?? SOURCE_DEFAULT_STOCK;
+}
+function spendSource(g,source,key,amount){
+  const before=sourceRemaining(g,source,key),state=sourceState(g,source);
+  state.stock[key]=Math.max(0,before-amount);
+  if(amount>0 && !state.refillAt) state.refillAt=gameMinutes(g)+source.minutes;
+  g.sourceStocks[source.key]=state;
+}
+function sourceStatus(g,source,keys=Object.keys(source.stock)){
+  const state=sourceState(g,source);
+  const amounts=keys.map(k=>`${fmt(sourceRemaining(g,source,k))} ${RESOURCES[k]?.name||k}`);
+  const empty=keys.length && keys.every(k=>sourceRemaining(g,source,k)<0.001);
+  const low=keys.some(k=>sourceRemaining(g,source,k)<=(source.stock[k]??SOURCE_DEFAULT_STOCK)*0.25);
+  const status=empty?(source.family==="water"?"has run dry":"is depleted"):low?"is running low":"has supplies";
+  return `${source.label} ${status}: ${amounts.join(", ")}.${state.refillAt?` Replenishes in ${timeText(Math.max(0,state.refillAt-gameMinutes(g)))}.`:""}`;
+}
+function sourceBlocker(g,source,keys,town=false){
+  if(!keys.some(k=>sourceRemaining(g,source,k)>0.001)) return sourceStatus(g,source,keys);
+  if(!keys.some(k=>sourceRemaining(g,source,k)>0.001 && (town?storageRoom(g,k):carryRoom(g,k))>=0.001)) return town?"Base storage full.":"Pack or water containers full. Unload supplies first.";
+  return "";
+}
+function collectSource(g,source,wanted,town=false,quiet=false){
+  const got={};
+  for(const [key,amount] of Object.entries(wanted)){
+    const available=Math.min(amount,sourceRemaining(g,source,key));
+    const n=town?addResource(g,key,available):addCarried(g,key,available,false);
+    if(n>0){ spendSource(g,source,key,n);got[key]=n; }
+  }
+  if(!quiet){
+    const text=Object.entries(got).map(([k,v])=>`${fmt(v)} ${RESOURCES[k].name}`).join(", ");
+    pushLog(g,text?`Collected ${text} into your pack.`:sourceBlocker(g,source,Object.keys(wanted),town),text?"good":"warn");
+    if(text) pushLog(g,sourceStatus(g,source,Object.keys(wanted)),"info");
+  }
+  return got;
+}
+const _workerSourceTiles=new WeakMap();
+const _productionStatuses=new WeakMap();
+function productionStatuses(g){ if(!_productionStatuses.has(g)) _productionStatuses.set(g,{});return _productionStatuses.get(g); }
+function workerSource(g,key,building=null,siteKey=null){
+  const family=resourceFamily(key);
+  if(siteKey){
+    const [x,y]=siteKey.split(",").map(Number);
+    const active=Math.max(Math.abs(x-g.villageX),Math.abs(y-g.villageY))<=ACTIVE_MAP_RADIUS || Math.max(Math.abs(x-g.playerX),Math.abs(y-g.playerY))<=ACTIVE_MAP_RADIUS;
+    return active && g.explored[siteKey]?sourceAt(g,x,y,family):null;
+  }
+  // Constructed wells, collectors and animal pens have their own recoverable reserves.
+  if(["well","rain_barrel","water_collector","chicken_coop","goat_pen","animal_stable"].includes(building)){
+    const rule=SOURCE_RULES[family],count=g.buildings[building]?.count||1;
+    return {key:`building:${building}:${family}`,family,minutes:rule.minutes,label:BUILDINGS[building].name,stock:Object.fromEntries(Object.entries(rule.stock).map(([k,v])=>[k,v*count]))};
+  }
+  let cached=_workerSourceTiles.get(g);
+  if(!cached || cached.minute!==gameMinutes(g)){
+    const tiles=[];
+    for(let dy=-8;dy<=8;dy++) for(let dx=-8;dx<=8;dx++){
+      const x=g.villageX+dx,y=g.villageY+dy;
+      if(g.explored[`${x},${y}`]) tiles.push({x,y,tile:tileAt(g,x,y),distance:Math.max(Math.abs(dx),Math.abs(dy))});
+    }
+    tiles.sort((a,b)=>a.distance-b.distance);
+    cached={minute:gameMinutes(g),tiles};_workerSourceTiles.set(g,cached);
+  }
+  let depleted=null;
+  for(const {x,y,tile} of cached.tiles){
+    const feature=MAP_FEATURES[tile.feature?.type],has=!!feature?.loot?.[key];
+    const fits=has || (family==="water" ? tileWaterKind(tile)===(key==="water"?"clean":"dirty") :
+      family==="wood" ? ["forest","deep_forest"].includes(tile.biome) :
+      family==="forage" ? ["plains","forest","deep_forest","hills"].includes(tile.biome) :
+      family==="mineral" ? ["stone","sand","clay"].includes(key) && !BIOMES[tile.biome].blocks :
+      family==="wildlife" ? !!MAP_ENTITIES[tile.entity?.type]?.huntable : tile.biome==="ruins");
+    if(!fits) continue;
+    const animal=family==="wildlife" && MAP_ENTITIES[tile.entity?.type]?.huntable ? tile.entity:null;
+    const source=sourceAt(g,animal?.originX??x,animal?.originY??y,family);
+    if(!depleted) depleted=source;
+    if(sourceRemaining(g,source,key)>0.001) return source;
+  }
+  return depleted;
+}
+function productionSources(g,output,building=null,siteKey=null){
+  const sources={};
+  for(const key of Object.keys(output)) sources[key]=workerSource(g,key,building,siteKey);
+  return sources;
+}
+function productionBlocker(g,output,cost={},sources=null){
+  if(Object.keys(output).length && !storageFits(g,output,cost)) return "Base storage full";
+  if(sources) for(const [key,n] of Object.entries(output)){
+    const source=sources[key];
+    if(!source) return `No discovered source of ${RESOURCES[key].name} near home`;
+    if(sourceRemaining(g,source,key)+1e-8<n) return sourceStatus(g,source,[key]);
+  }
+  return "";
+}
+function commitProduction(g,output,cost={},sources=null){
+  pay(g,cost);
+  for(const [key,n] of Object.entries(output)){
+    const got=addResource(g,key,n);
+    if(sources?.[key]) spendSource(g,sources[key],key,got);
+  }
+}
+function resourceCap(g,key){ return (g.resources[key]||0)+storageRoom(g,key); }
 function productionStock(g,key){ return Math.max(0,(g.resources[key] || 0)-(g.reserves?.[key] || 0)); }
 function productionWorkers(g,id){
   const slots = (BUILDINGS[id]?.workers || 0)*(g.buildings[id]?.count || 0);

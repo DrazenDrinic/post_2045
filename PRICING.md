@@ -194,7 +194,7 @@ Read straight from `RECIPES`. Hand recipes work anywhere; others need a station 
 
 ### 🎒 Camping & field work
 
-Town storage is reachable only inside the settlement footprint; outside it you use carried supplies. Pack capacity is **30 load**, **45 with a canvas backpack**, or **65 with a framed backpack**. Most small items weigh 0.05–0.3; wood weighs 1, stone/ore 1.2.
+All personal pickups and crafting outputs enter your pack, even at home. Return on or next to the home campfire or a storage building to transfer. Pack capacity is **30 load**, **45 with a canvas backpack**, or **65 with a framed backpack**, including equipped gear. Most small items weigh 0.05–0.3; wood weighs 1, stone/ore 1.2. Water containers hold **3 units** initially; each carried canteen adds **3**, each bucket **5**. Clean and dirty water share container capacity and also count toward pack weight.
 
 | Field action | Materials | Time |
 |---|---|---:|
@@ -210,7 +210,7 @@ Town storage is reachable only inside the settlement footprint; outside it you u
 | Claim mine / fishing site | 2 wood + 1 rope | 30 min |
 | Establish supply outpost | 6 wood + 1 rope | 30 min |
 
-A claimed mine supports **40 worker-days**; fishing sites are renewable; haulers recover **8 resource units/day** from supply outposts.
+Claimed mines and fishing sites draw from finite reserves shared with the player; exhausted sources recover on their game-time schedule. Haulers recover up to **8 resource units/day** from supply outposts, limited by base space. Full storage pauses production before inputs are spent.
 
 ### 🌾 Farming & work orders
 
@@ -251,9 +251,9 @@ Costs, effects and build limits from `BUILDINGS`. **Max** is the build cap (×3 
 
 | Building | Cost | Effect | Max | W | Unlock |
 |---|---|---|---:|---:|:--|
-| 📦 Storage Shed | 15 🪵 wood · 4 📌 nails | +100 storage (all resources) | 24 | 1 | start |
-| 🏬 Warehouse | 50 🪵 wood · 30 🪨 stone · 20 📌 nails · 20 🟫 planks | +400 storage (all resources) | 12 | 1 | Large Structures |
-| 🥖 Food Cellar | 20 🪨 stone · 10 🪵 wood · 10 🟤 clay | +200 food/crop/meat storage | 12 | 0 | Justice |
+| 📦 Storage Shed | 15 🪵 wood · 4 📌 nails | +100 shared storage load (resources and gear) | 24 | 1 | start |
+| 🏬 Warehouse | 50 🪵 wood · 30 🪨 stone · 20 📌 nails · 20 🟫 planks | +400 shared storage load (resources and gear) | 12 | 1 | Large Structures |
+| 🥖 Food Cellar | 20 🪨 stone · 10 🪵 wood · 10 🟤 clay | +200 food/crop/meat-only load | 12 | 0 | Justice |
 
 </details>
 <details>
@@ -343,7 +343,7 @@ Costs, effects and build limits from `BUILDINGS`. **Max** is the build cap (×3 
 | 🚗 Scrapyard | 20 🔩 metal scraps · 5 🪵 wood | produces 1 🔧 parts · 1 🔩 metal scraps per worker/day | 6 | 1 | Metalworking |
 | 🔧 Repair Station | 15 🔩 metal scraps · 3 🛠 tools · 5 🔧 parts | repairs buildings | 6 | 1 | Mechanics |
 | ⚙ Mechanics Shed | 20 🔩 metal scraps · 10 🔧 parts · 3 🛠 tools | produces 1 🔧 parts per worker/day; converts 2 🔧 parts → 1 🔌 components (×2/worker) | 6 | 1 | Mechanics |
-| ⛽ Fuel Depot | 20 🔩 metal scraps · 10 🪨 stone | +50 storage (all resources); safe fuel/oil storage | 6 | 0 | Mechanics |
+| ⛽ Fuel Depot | 20 🔩 metal scraps · 10 🪨 stone | +50 shared storage load (resources and gear); safe fuel/oil storage | 6 | 0 | Mechanics |
 
 </details>
 <details>
@@ -382,7 +382,21 @@ Costs, effects and build limits from `BUILDINGS`. **Max** is the build cap (×3 
 
 </details>
 
-**Storage:** base cap is 80 per resource; a storage shed adds +100, a warehouse +400, a food cellar +200 to food/crops/meat. Excess food spoils above ~90% full.
+**Storage:** the campfire provides 80 shared load; each storage shed adds 100, warehouse 400, and fuel depot 50. Stored gear counts. Each food cellar adds 200 food/crops/meat-only load, used before general storage. Transfers move only what fits; the rest remains in the pack. Existing over-capacity saves retain their supplies. Food can spoil when total storage load exceeds 90% of general + cellar capacity.
+
+### Finite resource reserves and recovery
+All gathering methods and worker collection share location-based stock. Recovery starts on the first withdrawal, uses game time, and survives saves and chunk eviction. Empty sources and full packs block collection without spending time, energy or durability. Finite loot overflow stays at the source; ordinary gathering leaves uncollected stock untouched.
+
+| Reserve family | Starting supply | Recovery cycle |
+|---|---|---|
+| Water source | 20 💧 clean water · 20 💧 dirty water | 5h |
+| Timber | 30 🪵 wood | 48h |
+| Foraging ground | 12 🍞 food · 8 🌿 herbs · 8 🌱 seeds · 20 🧵 plant fiber · 12 🌾 crops | 24h |
+| Accessible deposit | 24 🪨 stone · 16 ⛓ iron ore · 16 ⬛ charcoal · 20 🟤 clay · 20 🟤 sand | 72h |
+| Local wildlife | 12 🍖 meat · 8 🦌 hides · 8 🦴 bones | 24h |
+| Salvage | Feature loot maximum ×4 for each material; otherwise 12 per material | 72h |
+
+Wildlife reserves are shared within 8×8 areas; moving animals retain their origin. Built water collectors and livestock buildings have recoverable reserves scaled by building count. Crops require another growth cycle. Quick Scout retains a 12-hour route cooldown, underground routes 24 hours and event sites 72 hours. A trader has one bundle, restocking 24 hours after purchase; both payment and pack/container space are checked before exchange.
 
 ---
 
@@ -629,9 +643,9 @@ Craftable equipment from `ITEMS` (+ its `RECIPES` entry). Tools wear down and ar
 | Crowbar | crowbar | dur 120, wt 1.5 | 2 ⛓ iron · 30m · Forge | Faster salvage and extra scrap from ruins. |
 | Bow | weapon | dur 100, wt 1, dmg 4 | 3 🪵 wood · 2 🪢 rope · 30m · Crafting Table | Required for ranged hunting; equip for combat. |
 | Salvaged Weapon | weapon | dur 140, wt 2, dmg 6 | 1 🗡 weapons · 10m · hand | Equip for combat; carried ammo can add damage. |
-| Fishing Rod | rod | dur 100, wt 0.8 | 2 🪵 wood · 1 🪢 rope · 1 🦴 bones · 20m · hand | Fish beside a water source. |
-| Bucket | bucket | wt 0.8 | 2 🔩 metal scraps · 1 🪢 rope · 20m · Crafting Table | Fetch 5 water at once. |
-| Canteen | canteen | wt 0.3 | 1 🟫 leather · 1 🪢 rope · 20m · Crafting Table | Fetch 3 water and use 20% less travel thirst. |
+| Fishing Rod | rod | dur 100, wt 0.8 | 2 🪵 wood · 1 🪢 rope · 1 🦴 bones · 20m · hand | Fish beside water; local fish stocks need time to recover. |
+| Bucket | bucket | wt 0.8, water capacity +5 | 2 🔩 metal scraps · 1 🪢 rope · 20m · Crafting Table | Adds 5 water capacity; fetch up to 5 at once. |
+| Canteen | canteen | wt 0.3, water capacity +3 | 1 🟫 leather · 1 🪢 rope · 20m · Crafting Table | Adds 3 water capacity; fetch up to 3 and use 20% less travel thirst. |
 | Torch | light | dur 240, wt 0.3, +2 vision | 1 🪵 wood · 1 🧵 cloth · 5m · hand | Adds night vision and permits deep underground searches; consumes fuel minutes. |
 | Lantern | light | dur 720, wt 0.8, +3 vision | 2 🔩 metal scraps · 1 🪟 glass · 1 🛢 oil · 30m · Crafting Table | Adds night vision and permits deep underground searches; consumes fuel minutes. |
 | Home Compass | compass | wt 0.2 | 2 ⛓ iron · 1 🪟 glass · 1 🔧 parts · 30m · Crafting Table | Points toward the settlement while carried. |

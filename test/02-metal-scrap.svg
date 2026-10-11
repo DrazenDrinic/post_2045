@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="scrap-title scrap-desc">
+  <title id="scrap-title">Metal scrap</title>
+  <desc id="scrap-desc">A rusted gear, bent sheet metal, a loose bolt, and a salvaged copper wire.</desc>
+  <defs>
+    <linearGradient id="scrap-plate" x1="76" y1="103" x2="155" y2="205" gradientUnits="userSpaceOnUse"><stop stop-color="#87979b"/><stop offset="1" stop-color="#43565e"/></linearGradient>
+    <linearGradient id="scrap-gear" x1="120" y1="41" x2="183" y2="152" gradientUnits="userSpaceOnUse"><stop stop-color="#d6a472"/><stop offset=".45" stop-color="#a96c49"/><stop offset="1" stop-color="#65473c"/></linearGradient>
+  </defs>
+  <ellipse cx="128" cy="217" rx="95" ry="15" fill="#0b1014" opacity=".25"/>
+  <g stroke="#242c2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m43 108 81-28 66 83-83 36-19-30-31-5Z" fill="#4c626a"/>
+    <path d="m43 108 15-12 76-25-10 9Z" fill="#a9b6b5"/>
+    <path d="m58 110 15 35m5-42 15 39m5-45 18 42" stroke="#a6b4b0" stroke-width="5"/>
+    <path d="m76 151 34 5 28 36-31 7-19-30-31-5" fill="#ad7353" stroke="none"/>
+    <path d="m138 39 21-2 5 15 15 4 12-10 17 14-7 15 7 14 17 1 3 23-17 6-5 13 10 14-15 16-15-9-15 5-3 17-24 1-5-17-14-6-14 10-17-16 8-14-5-15-17-3-2-22 17-6 5-14-10-14 15-16 16 8 13-5Z" fill="url(#scrap-gear)"/>
+    <path d="m145 46 9-1 5 17 21 5 12-10m21 40 3 10-18 6-6 23 8 10" stroke="#e2b482" stroke-width="3"/>
+    <circle cx="155" cy="104" r="33" fill="#63564a"/>
+    <circle cx="155" cy="104" r="23" fill="#26353a"/>
+    <path d="M138 120c-12-19 2-38 23-37" stroke="#d5ab7d" stroke-width="3"/>
+    <path d="m184 78 5 5m-60-19 5 3m43 72-5 4m-49-34 2 7" stroke="#634239" stroke-width="3"/>
+    <path d="m42 158 83-36 65 34-83 40Z" fill="url(#scrap-plate)"/>
+    <path d="m42 158 65 38 15 26-66-34Z" fill="#3c4b53"/>
+    <path d="m107 196 83-40 7 20-75 46Z" fill="#687980"/>
+    <path d="m53 159 71-29 31 16m-41 53 71-36" stroke="#bdc7bd" stroke-width="3"/>
+    <path d="m56 173 31 16 4 12-28-13m88-24 15-7 5 10-18 10-8-5" fill="#b8754f" stroke="none"/>
+    <path d="m81 157 15 7m20-20 8 4m-3 24 19-8" stroke="#34444a" stroke-width="3"/>
+    <path d="m156 196 31-26 12 12-29 28Z" fill="#87999c"/>
+    <path d="m160 195 9 9m-3-15 9 9m-3-15 9 9m-3-14 9 9" stroke="#46565b" stroke-width="2"/>
+    <path d="m180 169 4-13 17-4 13 13-4 16-14 5Z" fill="#a8b7b7"/>
+    <path d="m191 166 7-3 6 6-2 7-8 2-5-6Z" fill="#40525b" stroke-width="3"/>
+    <path d="M45 187c-26 15-7 34 14 25 14-6 7-19-1-12s9 25 29 16" stroke="#242c2e" stroke-width="9"/>
+    <path d="M45 187c-26 15-7 34 14 25 14-6 7-19-1-12s9 25 29 16" stroke="#c59161" stroke-width="5"/>
+  </g>
+</svg>

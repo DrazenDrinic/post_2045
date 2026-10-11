@@ -7,7 +7,19 @@ function init(){
   const title = document.querySelector("header h1");
   if (title) title.textContent = "POST 2045";
 
-  if (!load()){
+  const loaded = load();
+  if (loaded===null){
+    showModal({
+      title:"Could not load your save",
+      body:"<p>The saved data could not be read or uses an unsupported world format. It has been kept in browser storage.</p>",
+      buttons:[
+        {label:"Retry",primary:true,action:()=>{closeModal();init();}},
+        {label:"Erase save and start over",action:()=>{clearSaves();closeModal();init();}}
+      ]
+    });
+    return;
+  }
+  if (!loaded){
     startNewRun();
   } else {
     // Ensure player id exists
@@ -16,8 +28,16 @@ function init(){
   document.getElementById("btn-rest").onclick = ()=> playerAction("sleep");
   document.getElementById("btn-rt").onclick = toggleRealtime;
   document.getElementById("btn-speed").onclick = cycleRealtimeSpeed;
-  document.getElementById("btn-save").onclick = ()=> { save(); pushLog(G,"Game saved.","info"); render(); };
-  document.getElementById("btn-load").onclick = ()=> { if (load()) { cancelAutoWalk(); _combat=null; _buildToPlace=null; _activityEpoch++; closeModal(); pushLog(G,"Game loaded.","info"); render(); } };
+  document.getElementById("btn-save").onclick = ()=> { if (save()) pushLog(G,"Game saved.","info"); render(); };
+  document.getElementById("btn-load").onclick = ()=> {
+    const result=load();
+    if (result){
+      cancelAutoWalk(); _combat=null; _buildToPlace=null; _activityEpoch++; closeModal();
+      pushLog(G,"Game loaded.","info"); render();
+    } else if (result===null){
+      pushLog(G,"Load failed. The current game and stored save were kept.","bad"); render();
+    }
+  };
   document.getElementById("btn-reset").onclick = reset;
   document.getElementById("btn-help").onclick = help;
 
